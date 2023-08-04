@@ -1,5 +1,5 @@
 import { shuffleArray, sendTelegramMessage, sleep } from "./Helpers";
-import { calculateArgentxAddress, sendMessage } from "./StarkHelpers";
+import { calculateArgentxAddress, sendMessage, deployStarknetAccount } from "./StarkHelpers";
 import { MAX_TRANSACTIONS_PER_WALLET, MAX_WAIT_TIME, MIN_WAIT_TIME } from "../DEPENDENCIES";
 import { Data } from "./Constants";
 import fs from 'fs';
@@ -32,6 +32,24 @@ async function main() {
     const address = calculateArgentxAddress(keys[0]);
     console.log('Using address: ' + address + '\n');
 
+    const deploy = await deployStarknetAccount(keys[0]);
+
+    if (deploy.result) {
+      console.log(`Deployed account: ${deploy.accountAddress}, tx: ${deploy.txHash}, fee: ${(deploy.totalPrice)?.toFixed(6)} ETH`);
+
+      await sendTelegramMessage(`🔔 Deployed account: ${deploy.accountAddress}, tx: https://starkscan.co/tx/${deploy.txHash}, fee: ${(deploy.totalPrice)?.toFixed(6)} ETH`);
+
+      await sleep({ minutes: 2 });
+    } else {
+      if (deploy.name === 'Transaction failed' || deploy.name === 'Zero balance') {
+        console.log(`Error deploying account: ${deploy.name} for address: ${address}`);
+
+        await sendTelegramMessage(`❌ Error deploying account: ${deploy.name} for address: ${address}`);
+
+        continue;
+      }
+    }
+
     if (data[address] && data[address].transactions && data[address].transactions! >= MAX_TRANSACTIONS_PER_WALLET) {
       console.log('Max transactions reached for address: ' + address);
 
@@ -55,7 +73,7 @@ async function main() {
     if (!msg.result) {
       console.log('Not enough funds for address: ' + address);
 
-      await sendTelegramMessage(`❌ Not enough funds for address: ${address}`);
+      await sendTelegramMessage(`🆘 Not enough funds for address: ${address}`);
 
       pkArr.splice(pkArr.indexOf(keys[0]), 1);
 

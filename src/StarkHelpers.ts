@@ -1,7 +1,7 @@
-import { Account, ec, hash, Contract, uint256, CallData, RpcProvider, InvokeFunctionResponse, CommonTransactionReceiptResponse } from "starknet";
+import { Account, ec, hash, Contract, uint256, CallData, RpcProvider, InvokeFunctionResponse, CommonTransactionReceiptResponse, DeployContractResponse } from "starknet";
 import { retry } from "./Helpers";
 import { BigNumber, ethers } from "ethers";
-import { AX_ACCOUNT_CLASS_HASH, AX_PROXY_CLASS_HASH, TOKENS, DECIMALS, DMAIL_ROUTER_ADDRESS } from "./Constants";
+import { AX_ACCOUNT_CLASS_HASH, AX_PROXY_CLASS_HASH, TOKENS, DECIMALS, DMAIL_ROUTER_ADDRESS, STARK_ETH_ADDRESS } from "./Constants";
 import { STARKNET_RPC_URL } from "../DEPENDENCIES";
 import erc20Abi from './erc20ABI.json'
 import routerAbi from './routerABI.json'
@@ -99,5 +99,80 @@ export async function sendMessage(
     result: true,
     txHash: receipt.transaction_hash,
     totalPrice: +ethers.utils.formatEther(BigNumber.from(receipt.actual_fee)),
+  }
+}
+
+export async function deployStarknetAccount(
+  privateKey: string
+): Promise<{
+  result: boolean;
+  name: string;
+  accountAddress?: string;
+  txHash?: string;
+  totalPrice?: number;
+}> {
+
+  const account = new Account(provider, calculateArgentxAddress(privateKey), privateKey);
+  const etherInstance = new Contract(erc20Abi, STARK_ETH_ADDRESS, provider);
+
+  let totalPrice = 0;  
+
+  const nonce = await retry<any>(() => account.getNonce());
+
+  if (nonce > 0) {
+    return {
+      result: false,
+      name: 'Already deployed'
+    }
+  }
+
+  const starkBalanceObj = await retry<any>(() => etherInstance.balanceOf(account.address));
+  const starkBal = BigNumber.from(uint256.uint256ToBN(starkBalanceObj.balance).toString()); // balance in wei
+
+  if (starkBal.eq(0)) {
+    return {
+      result: false,
+      name: 'Zero balance'
+    }
+  }
+  const starkPublicKey = ec.starkCurve.getStarkKey(privateKey);
+
+  const AXproxyConstructorCallData = CallData.compile(
+    {
+      implementation: AX_ACCOUNT_CLASS_HASH,
+      selector: hash.getSelectorFromName("initialize"),
+      calldata: CallData.compile({ signer: starkPublicKey, guardian: "0" }),
+    }
+  );
+
+  const deployAccountPayload = {
+    classHash: AX_PROXY_CLASS_HASH,
+    constructorCalldata: AXproxyConstructorCallData,
+    contractAddress: account.address,
+    addressSalt: starkPublicKey,
+  };
+ 
+  const deployFee = await retry(() => account.estimateAccountDeployFee(deployAccountPayload));
+
+  const deployFeeInWei = BigNumber.from((deployFee.suggestedMaxFee).toString());
+  totalPrice += Number(ethers.utils.formatEther(deployFeeInWei));
+
+  const tx = await retry(() => account.deployAccount(deployAccountPayload));
+
+  const receipt = await retry<DeployContractResponse>(() => provider.waitForTransaction(tx.transaction_hash));
+
+  if (!receipt.contract_address) {
+    return {
+      result: false,
+      name: 'Transaction failed'
+    }
+  }
+  
+  return {
+    result: true,
+    name: 'Deployed',
+    accountAddress: receipt.contract_address,
+    txHash: receipt.transaction_hash,
+    totalPrice: totalPrice,
   }
 }
