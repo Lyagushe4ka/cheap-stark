@@ -39,7 +39,7 @@ async function main() {
 
       await sendTelegramMessage(`🔔 Deployed account: ${deploy.accountAddress}, tx: https://starkscan.co/tx/${deploy.txHash}, fee: ${(deploy.totalPrice)?.toFixed(6)} ETH`);
 
-      await sleep({ minutes: 2 });
+      await sleep({ minutes: 6 });
     } else {
       if (deploy.name === 'Transaction failed' || deploy.name === 'Zero balance') {
         console.log(`Error deploying account: ${deploy.name} for address: ${address}`);
