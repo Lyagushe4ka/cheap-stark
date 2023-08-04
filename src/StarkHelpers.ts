@@ -117,9 +117,20 @@ export async function deployStarknetAccount(
 
   let totalPrice = 0;  
 
-  const nonce = await retry<any>(() => account.getNonce());
+  let nonce: string | undefined = undefined;
+  try {
+    nonce = await account.getNonce();
+  } catch (e: any) {
+    if (e.message === '20: Contract not found') {
+    } else {
+      return {
+        result: false,
+        name: 'Already deployed'
+      }
+    }
+  }
 
-  if (nonce > 0) {
+  if (nonce) {
     return {
       result: false,
       name: 'Already deployed'
