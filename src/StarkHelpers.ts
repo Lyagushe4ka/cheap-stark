@@ -65,15 +65,15 @@ export async function sendMessage(
   const etherInstance = new Contract(erc20Abi, TOKENS["ETH"], account);
   const routerInstance = new Contract(routerAbi, DMAIL_ROUTER_ADDRESS, account);
 
-  const etherBalance = await retry<any>(() => etherInstance.balanceOf(account.address));
+  const etherBalance = await retry<any>(() => etherInstance.balanceOf(account.address), 10, 90);
 
-  const invokeFee = await account.estimateInvokeFee(
+  const invokeFee = await retry(() => account.estimateInvokeFee(
     {
       contractAddress: DMAIL_ROUTER_ADDRESS,
       entrypoint: "transaction",
       calldata: CallData.compile({ to: email, theme: theme }),
     }
-  );
+  ), 10, 90);
   console.log(`Suggested max fee: ${invokeFee.suggestedMaxFee}`);
 
   if (invokeFee.suggestedMaxFee > (uint256.uint256ToBN(etherBalance.balance))) {
@@ -82,12 +82,14 @@ export async function sendMessage(
     }
   }
 
+  console.log('sending transaction')
   const tx = await retry<InvokeFunctionResponse>(() => routerInstance.transaction(
     email,
     theme,
-  ));
+  ), 10, 90);
 
-  const receipt = await retry<CommonTransactionReceiptResponse>(() => provider.waitForTransaction(tx.transaction_hash));
+  console.log('waiting for transaction')
+  const receipt = await retry<CommonTransactionReceiptResponse>(() => provider.waitForTransaction(tx.transaction_hash), 10, 90);
 
   if (!receipt.transaction_hash) {
     return {
@@ -137,7 +139,7 @@ export async function deployStarknetAccount(
     }
   }
 
-  const starkBalanceObj = await retry<any>(() => etherInstance.balanceOf(account.address));
+  const starkBalanceObj = await retry<any>(() => etherInstance.balanceOf(account.address), 10, 90);
   const starkBal = BigNumber.from(uint256.uint256ToBN(starkBalanceObj.balance).toString()); // balance in wei
 
   if (starkBal.eq(0)) {
@@ -163,14 +165,16 @@ export async function deployStarknetAccount(
     addressSalt: starkPublicKey,
   };
  
-  const deployFee = await retry(() => account.estimateAccountDeployFee(deployAccountPayload));
+  const deployFee = await retry(() => account.estimateAccountDeployFee(deployAccountPayload), 10, 90);
 
   const deployFeeInWei = BigNumber.from((deployFee.suggestedMaxFee).toString());
   totalPrice += Number(ethers.utils.formatEther(deployFeeInWei));
 
-  const tx = await retry(() => account.deployAccount(deployAccountPayload));
+  console.log('starting account deploy')
+  const tx = await retry(() => account.deployAccount(deployAccountPayload), 10, 90);
 
-  const receipt = await retry<DeployContractResponse>(() => provider.waitForTransaction(tx.transaction_hash));
+  console.log('waiting for deploy transaction')
+  const receipt = await retry<DeployContractResponse>(() => provider.waitForTransaction(tx.transaction_hash), 10, 90);
 
   if (!receipt.contract_address) {
     return {
