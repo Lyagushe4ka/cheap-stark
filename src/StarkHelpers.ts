@@ -41,7 +41,7 @@ export async function getStarknetBalances(
   for (const token in TOKENS) {
     const tokenInstance = new Contract(erc20Abi, TOKENS[token], account);
 
-    const balance = await retry<any>(() => tokenInstance.balanceOf(account.address));
+    const balance = await retry<any>(() => tokenInstance.balanceOf(account.address), 10, 90);
     const balanceInWei = BigNumber.from(uint256.uint256ToBN(balance.balance).toString()); // balance in wei
     const formattedBalance = Number(ethers.utils.formatUnits(balanceInWei, DECIMALS[token]));
 
