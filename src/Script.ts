@@ -1,7 +1,7 @@
 import { shuffleArray, sendTelegramMessage, sleep } from "./Helpers";
-import { calculateArgentxAddress, sendMessage, deployStarknetAccount } from "./StarkHelpers";
+import { calculateArgentxAddress, sendMessage, deployStarknetAccount, isCollateralEnabled, enableCollateral } from "./StarkHelpers";
 import { MAX_TRANSACTIONS_PER_WALLET, MAX_WAIT_TIME, MIN_WAIT_TIME } from "../DEPENDENCIES";
-import { Data } from "./Constants";
+import { Data, TOKENS } from "./Constants";
 import fs from 'fs';
 
 
@@ -60,29 +60,66 @@ async function main() {
       continue;
     }
 
-    // random number between 5 and 10
-    const rnd = Math.floor(Math.random() * 6) + 5;
-    const email = shuffleArray(addressArr)[0].slice(0, rnd) + '@dmail.ai';
-    console.log('Sending message to: ' + email);
-    // random number from 1 to 3
-    const rndNum = Math.floor(Math.random() * 3) + 1;
-    const theme = shuffleArray(wordList).slice(0, rndNum).join(' ');
+    const totalisator = Math.random();
 
-    const msg = await sendMessage(keys[0], theme, email);
+    let msg;
+    if (totalisator < 0.5) {
 
-    if (!msg.result) {
-      console.log('Not enough funds for address: ' + address);
+      // random number between 5 and 10
+      const rnd = Math.floor(Math.random() * 6) + 5;
+      const email = shuffleArray(addressArr)[0].slice(0, rnd) + '@dmail.ai';
+      console.log('Sending message to: ' + email);
+      // random number from 1 to 3
+      const rndNum = Math.floor(Math.random() * 3) + 1;
+      const theme = shuffleArray(wordList).slice(0, rndNum).join(' ');
 
-      await sendTelegramMessage(`🆘 Not enough funds for address: ${address}`);
+      msg = await sendMessage(keys[0], theme, email);
 
-      pkArr.splice(pkArr.indexOf(keys[0]), 1);
+      if (!msg.result) {
+        console.log('Not enough funds for address: ' + address);
 
-      continue;
+        await sendTelegramMessage(`🆘 Not enough funds for address: ${address}`);
+
+        pkArr.splice(pkArr.indexOf(keys[0]), 1);
+
+        continue;
+      }
+
+      console.log(`Sent message from ${address} to ${email}, tx: ${msg.txHash}, fee: ${(msg.totalPrice)?.toFixed(6)} ETH`);
+
+      await sendTelegramMessage(`✅ Sent message from ${address} to ${email}, tx: https://starkscan.co/tx/${msg.txHash}, fee: ${(msg.totalPrice)?.toFixed(6)} ETH`);
+
+    } else {
+
+      const tokens = shuffleArray(Object.keys(TOKENS));
+      let tokenName: string | undefined;
+
+      for (const token of tokens) {
+        const enabled = await isCollateralEnabled(keys[0], token);
+
+        if (enabled) {
+          continue;
+        }
+        tokenName = token;
+        break;
+      }
+
+      if (!tokenName) {
+        console.log('All tokens are enabled for address: ' + address);
+        continue;
+      }
+
+      msg = await enableCollateral(keys[0], tokenName);
+
+      if (!msg.result) {
+        continue;
+      }
+
+      console.log(`Enabled collateral for ${tokenName} for address: ${address}, tx: ${msg.txHash}, fee: ${(msg.totalPrice)?.toFixed(6)} ETH`);
+
+      await sendTelegramMessage(`✅ Enabled collateral for ${tokenName} for address: ${address}, tx: https://starkscan.co/tx/${msg.txHash}, fee: ${(msg.totalPrice)?.toFixed(6)} ETH`);
+
     }
-
-    console.log(`Sent message from ${address} to ${email}, tx: ${msg.txHash}, fee: ${(msg.totalPrice)?.toFixed(6)} ETH`);
-
-    await sendTelegramMessage(`✅ Sent message from ${address} to ${email}, tx: https://starkscan.co/tx/${msg.txHash}, fee: ${(msg.totalPrice)?.toFixed(6)} ETH`);
 
     data[address] = {
       address,

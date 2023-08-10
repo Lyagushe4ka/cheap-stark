@@ -1,6 +1,6 @@
 
 
-export const STARKNET_RPC_URL = '';
+export const STARKNET_RPC_URL = 'https://starknet-mainnet.g.alchemy.com/v2/PboUZKnteNGgSvSkpHmGfKYudpwbRvyd';
 
 export const MAX_TRANSACTIONS_PER_WALLET = 5; // Max transactions per wallet
 
