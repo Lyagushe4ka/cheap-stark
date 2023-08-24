@@ -1,5 +1,5 @@
-import { shuffleArray, sendTelegramMessage, sleep } from "./Helpers";
-import { calculateArgentxAddress, sendMessage, deployStarknetAccount, isCollateralEnabled, enableCollateral } from "./StarkHelpers";
+import { shuffleArray, sendTelegramMessage, sleep, randomBetween } from "./Helpers";
+import { calculateArgentxAddress, sendMessage, deployStarknetAccount, isCollateralEnabled, enableCollateral, mintStarkId, carmineStakeToken, getStarknetBalances } from "./StarkHelpers";
 import { MAX_TRANSACTIONS_PER_WALLET, MAX_WAIT_TIME, MIN_WAIT_TIME } from "../DEPENDENCIES";
 import { Data, TOKENS } from "./Constants";
 import fs from 'fs';
@@ -63,7 +63,7 @@ async function main() {
     const totalisator = Math.random();
 
     let msg;
-    if (totalisator < 0.5) {
+    if (totalisator < 0.33) {
 
       // random number between 5 and 10
       const rnd = Math.floor(Math.random() * 6) + 5;
@@ -89,36 +89,59 @@ async function main() {
 
       await sendTelegramMessage(`✅ Sent message from ${address} to ${email}, tx: https://starkscan.co/tx/${msg.txHash}, fee: ${(msg.totalPrice)?.toFixed(6)} ETH`);
 
-    } else {
+    } else if (totalisator < 0.66 && totalisator >= 0.33) {
 
-      const tokens = shuffleArray(Object.keys(TOKENS));
-      let tokenName: string | undefined;
+      const token = shuffleArray(Object.keys(TOKENS))[0];
+      const enable = await isCollateralEnabled(keys[0], token);
 
-      for (const token of tokens) {
-        const enabled = await isCollateralEnabled(keys[0], token);
-
-        if (enabled) {
-          continue;
-        }
-        tokenName = token;
-        break;
-      }
-
-      if (!tokenName) {
-        console.log('All tokens are enabled for address: ' + address);
-        continue;
-      }
-
-      msg = await enableCollateral(keys[0], tokenName);
+      msg = await enableCollateral(keys[0], token, !enable);
 
       if (!msg.result) {
         continue;
       }
 
-      console.log(`Enabled collateral for ${tokenName} for address: ${address}, tx: ${msg.txHash}, fee: ${(msg.totalPrice)?.toFixed(6)} ETH`);
+      console.log(`${enable ? "Disabled" : "Enabled"} collateral for ${token} for address: ${address}, tx: ${msg.txHash}, fee: ${(msg.totalPrice)?.toFixed(6)} ETH`);
 
-      await sendTelegramMessage(`✅ Enabled collateral for ${tokenName} for address: ${address}, tx: https://starkscan.co/tx/${msg.txHash}, fee: ${(msg.totalPrice)?.toFixed(6)} ETH`);
+      await sendTelegramMessage(`✅ ${enable ? "Disabled" : "Enabled"} collateral for ${token} for address: ${address}, tx: https://starkscan.co/tx/${msg.txHash}, fee: ${(msg.totalPrice)?.toFixed(6)} ETH`);
 
+    } else if (totalisator >= 0.66 && totalisator < 1) {
+
+      msg = await mintStarkId(keys[0]);
+
+      if (!msg.result) {
+        continue;
+      }
+
+      console.log(`Minted stark identity for address: ${address}, tx: ${msg.txHash}, fee: ${(msg.totalPrice)?.toFixed(6)} ETH`);
+
+      await sendTelegramMessage(`✅ Minted stark identity for address: ${address}, tx: https://starkscan.co/tx/${msg.txHash}, fee: ${(msg.totalPrice)?.toFixed(6)} ETH`);
+
+    } else {
+
+      const balances = await getStarknetBalances(keys[0]);
+
+      const notZeroBalances = Object.keys(balances).filter(token => balances[token] !== 0);
+
+      if (notZeroBalances.length === 0) {
+        continue;
+      }
+
+      const token = shuffleArray(notZeroBalances)[0];
+      const amount = balances[token] / 100 * randomBetween(1, 6, 0);
+
+      msg = await carmineStakeToken(
+        keys[0],
+        token,
+        amount,
+      )
+
+      if (!msg.result) {
+        continue;
+      }
+
+      console.log(`Staked ${amount.toFixed(6)} of ${token} for address: ${address}, tx: ${msg.txHash}, fee: ${(msg.totalPrice)?.toFixed(6)} ETH`);
+
+      await sendTelegramMessage(`✅ Staked ${amount.toFixed(6)} of ${token} for address: ${address}, tx: https://starkscan.co/tx/${msg.txHash}, fee: ${(msg.totalPrice)?.toFixed(6)} ETH`);
     }
 
     data[address] = {

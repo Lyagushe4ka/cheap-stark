@@ -1,5 +1,5 @@
-import { Account, ec, hash, Contract, uint256, CallData, RpcProvider, InvokeFunctionResponse, CommonTransactionReceiptResponse, DeployContractResponse, GetTransactionReceiptResponse } from "starknet";
-import { retry } from "./Helpers";
+import { Account, ec, hash, Contract, uint256, CallData, RpcProvider, InvokeFunctionResponse, CommonTransactionReceiptResponse, DeployContractResponse, GetTransactionReceiptResponse, cairo } from "starknet";
+import { randomBetween, retry } from "./Helpers";
 import { BigNumber, ethers } from "ethers";
 import { AX_ACCOUNT_CLASS_HASH, AX_PROXY_CLASS_HASH, TOKENS, DECIMALS, DMAIL_ROUTER_ADDRESS, STARK_ETH_ADDRESS } from "./Constants";
 import { STARKNET_RPC_URL } from "../DEPENDENCIES";
@@ -195,6 +195,7 @@ export async function deployStarknetAccount(
 export async function enableCollateral(
   privateKey: string,
   tokenName: string,
+  enable: boolean = true,
 ): Promise<{
   result: boolean;
   txHash?: string;
@@ -208,7 +209,7 @@ export async function enableCollateral(
 
   const enableCall = {
     contractAddress: routerInstance.address,
-    entrypoint: "enable_collateral",
+    entrypoint: enable ? "enable_collateral" : "disable_collateral",
     calldata: CallData.compile({
       token: TOKENS[tokenName],
     })
@@ -264,4 +265,199 @@ export async function isCollateralEnabled(
   ), 10, 90);
 
   return Number(isCollateralEnabled.enabled) === 1 ? true : false;
+}
+
+const ABI = [{
+  "name": "mint",
+  "type": "function",
+  "inputs": [
+    {
+      "name": "starknet_id",
+      "type": "felt"
+    }
+  ],
+  "outputs": []
+},];
+
+export async function mintStarkId(
+  privateKey: string,
+): Promise<{
+  result: boolean;
+  txHash?: string;
+  totalPrice?: number;
+}> {
+  let totalPrice = 0;
+
+  const router = '0x05dbdedc203e92749e2e746e2d40a768d966bd243df04a6b712e222bc040a9af';
+  const signer = new Account(provider, calculateArgentxAddress(privateKey), privateKey);
+  console.log('signer', signer.address);
+  const routerInstance = new Contract(ABI, router, signer);
+
+  const number = randomBetween(100000000000, 999999999999, 0);
+
+  const swapCall = {
+    contractAddress: routerInstance.address,
+    entrypoint: "mint",
+    calldata: CallData.compile({
+      starknet_id: number,
+    })
+  }
+
+  const calls = [swapCall];
+
+  const tx = await retry<InvokeFunctionResponse>(() => signer.execute(calls));
+
+  if (!tx) {
+    return {
+      result: false,
+    }
+  }
+
+  let receipt;
+  try {
+  receipt = await retry<GetTransactionReceiptResponse>(() => provider.waitForTransaction(tx.transaction_hash));
+  } catch (e: any) {
+    return {
+      result: false,
+    }
+  }
+  
+  totalPrice += Number(ethers.utils.formatEther(BigNumber.from(receipt.actual_fee)));
+
+  return {
+    result: true,
+    txHash: receipt.transaction_hash,
+    totalPrice,
+  }
+}
+
+export async function carmineStakeToken(
+  privateKey: string,
+  tokenName: string,
+  amountInToken?: number,
+): Promise<{
+  result: boolean;
+  txHash?: string;
+  totalPrice?: number;
+}> {
+  let totalPrice = 0;
+
+  if (!['ETH', 'USDC'].includes(tokenName)) {
+    console.log('token not supported');
+    return {
+      result: false,
+    }
+  }
+
+  const abi = [
+    {
+      "name": "deposit_liquidity",
+      "type": "function",
+      "inputs": [
+        {
+          "name": "pooled_token_addr",
+          "type": "felt"
+        },
+        {
+          "name": "quote_token_address",
+          "type": "felt"
+        },
+        {
+          "name": "base_token_address",
+          "type": "felt"
+        },
+        {
+          "name": "option_type",
+          "type": "felt"
+        },
+        {
+          "name": "amount",
+          "type": "Uint256"
+        }
+      ],
+      "outputs": []
+    },
+  ]
+
+  const router = '0x076dbabc4293db346b0a56b29b6ea9fe18e93742c73f12348c8747ecfc1050aa';
+  const signer = new Account(provider, calculateArgentxAddress(privateKey), privateKey);
+  console.log('signer', signer.address);
+  const tokenInstance = new Contract(erc20Abi, TOKENS[tokenName], signer);
+  const routerInstance = new Contract(abi, router, signer);
+
+
+
+  
+  const amountInWei = cairo.uint256(ethers.utils.parseUnits(amountInToken!.toString(), DECIMALS[tokenName]).toString());
+  
+
+  const balance = await retry<any>(() => tokenInstance.balanceOf(signer.address));
+
+  if (uint256.uint256ToBN(balance.balance) < uint256.uint256ToBN(amountInWei)) {
+    return {
+      result: false,
+    }
+  }
+
+  const allowance = await retry<any>(() => tokenInstance.allowance(signer.address, router));
+
+  if (!allowance) {
+    return {
+      result: false,
+    }
+  }
+
+  const approveCall = {
+    contractAddress: tokenInstance.address,
+    entrypoint: "approve",
+    calldata: CallData.compile({
+      spender: routerInstance.address,
+      amount: amountInWei,
+    })
+  }
+
+  const swapCall = {
+    contractAddress: routerInstance.address,
+    entrypoint: "deposit_liquidity",
+    calldata: CallData.compile({
+      pooled_token_addr: TOKENS[tokenName],
+      quote_token_address: TOKENS.USDC,
+      base_token_address: TOKENS.ETH,
+      option_type: tokenName === 'ETH' ? 0 : 1,
+      amount: amountInWei,
+    })
+  }
+
+
+  const calls = [swapCall];
+
+  if (uint256.uint256ToBN(allowance.remaining) < uint256.uint256ToBN(amountInWei)) {
+    calls.unshift(approveCall);
+  }
+
+
+  const tx = await retry<InvokeFunctionResponse>(() => signer.execute(calls));
+
+  if (!tx) {
+    return {
+      result: false,
+    }
+  }
+
+  let receipt;
+  try {
+  receipt = await retry<GetTransactionReceiptResponse>(() => provider.waitForTransaction(tx.transaction_hash));
+  } catch (e: any) {
+    return {
+      result: false,
+    }
+  }
+  
+  totalPrice += Number(ethers.utils.formatEther(BigNumber.from(receipt.actual_fee)));
+
+  return {
+    result: true,
+    txHash: receipt.transaction_hash,
+    totalPrice,
+  }
 }

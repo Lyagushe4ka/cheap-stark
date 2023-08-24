@@ -94,3 +94,8 @@ export async function sendTelegramMessage(message: string) {
     console.log(error);
   }
 }
+
+export const randomBetween = (min: number, max: number, roundTo?: number): number => {
+  const random = Math.random() * (max - min) + min;
+  return roundTo !== undefined ? Math.round(random * 10 ** roundTo) / 10 ** roundTo : random;
+};
