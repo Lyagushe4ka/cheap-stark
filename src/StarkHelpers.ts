@@ -1,4 +1,4 @@
-import { Account, ec, hash, Contract, uint256, CallData, RpcProvider, InvokeFunctionResponse, CommonTransactionReceiptResponse, DeployContractResponse, GetTransactionReceiptResponse, cairo } from "starknet";
+import { Account, ec, hash, Contract, uint256, CallData, RpcProvider, InvokeFunctionResponse, CommonTransactionReceiptResponse, DeployContractResponse, GetTransactionReceiptResponse, cairo, num } from "starknet";
 import { randomBetween, retry } from "./Helpers";
 import { BigNumber, ethers } from "ethers";
 import { AX_ACCOUNT_CLASS_HASH, AX_PROXY_CLASS_HASH, TOKENS, DECIMALS, DMAIL_ROUTER_ADDRESS, STARK_ETH_ADDRESS } from "./Constants";
@@ -435,6 +435,61 @@ export async function carmineStakeToken(
     calls.unshift(approveCall);
   }
 
+
+  const tx = await retry<InvokeFunctionResponse>(() => signer.execute(calls));
+
+  if (!tx) {
+    return {
+      result: false,
+    }
+  }
+
+  let receipt;
+  try {
+  receipt = await retry<GetTransactionReceiptResponse>(() => provider.waitForTransaction(tx.transaction_hash));
+  } catch (e: any) {
+    return {
+      result: false,
+    }
+  }
+  
+  totalPrice += Number(ethers.utils.formatEther(BigNumber.from(receipt.actual_fee)));
+
+  return {
+    result: true,
+    txHash: receipt.transaction_hash,
+    totalPrice,
+  }
+}
+
+export async function makeEthApprove(
+  privateKey: string,
+): Promise<{
+  result: boolean;
+  txHash?: string;
+  totalPrice?: number;
+}> {
+  let totalPrice = 0;
+
+  const router = '0x051734077ba7baf5765896c56ce10b389d80cdcee8622e23c0556fb49e82df1b';
+  const signer = new Account(provider, calculateArgentxAddress(privateKey), privateKey);
+  console.log('signer', signer.address);
+  const etherInstance = new Contract(erc20Abi, TOKENS.ETH, signer);
+
+  const number = randomBetween(0.00001, 0.001, 6);
+
+  const amountInWei = cairo.uint256(ethers.utils.parseEther(number.toString()).toString());
+
+  const swapCall = {
+    contractAddress: etherInstance.address,
+    entrypoint: "increaseAllowance",
+    calldata: CallData.compile({
+      spender: router,
+      added_value: amountInWei,
+    })
+  }
+
+  const calls = [swapCall];
 
   const tx = await retry<InvokeFunctionResponse>(() => signer.execute(calls));
 
