@@ -22,10 +22,19 @@ export const DECIMALS: Record<string, number> = {
 export const AX_PROXY_CLASS_HASH = "0x25ec026985a3bf9d0cc1fe17326b245dfdc3ff89b8fde106542a3ea56c5a918";
 export const AX_ACCOUNT_CLASS_HASH = "0x033434ad846cdd5f23eb73ff09fe6fddd568284a0fb7d1be20ee482f044dabe2";
 
+export const BraavosProxyClassHash = '0x03131fa018d520a037686ce3efddeab8f28895662f019ca3ca18a626650f7d1e';
+export const BraavosInitialClassHash = '0x5aa23d5bb71ddaa783da7ea79d405315bafa7cf0387a74f4593578c3e9e6570';
+
 export const DMAIL_ROUTER_ADDRESS = '0x0454f0bd015e730e5adbb4f080b075fdbf55654ff41ee336203aa2e1ac4d4309';
 
 export type Data = {
   address?: string;
+  type?: 'Argent' | 'Braavos';
   transactions?: number;
   fees?: number;
+}
+
+export type StarkAccountData = {
+  type: 'Argent' | 'Braavos';
+  address: string;
 }

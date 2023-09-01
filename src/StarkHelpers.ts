@@ -1,7 +1,7 @@
-import { Account, ec, hash, Contract, uint256, CallData, RpcProvider, InvokeFunctionResponse, CommonTransactionReceiptResponse, DeployContractResponse, GetTransactionReceiptResponse, cairo, num } from "starknet";
-import { randomBetween, retry } from "./Helpers";
+import { Account, ec, hash, Contract, uint256, CallData, RpcProvider, InvokeFunctionResponse, CommonTransactionReceiptResponse, DeployContractResponse, GetTransactionReceiptResponse, cairo, num, Calldata } from "starknet";
+import { randomBetween, retry, sleep } from "./Helpers";
 import { BigNumber, ethers } from "ethers";
-import { AX_ACCOUNT_CLASS_HASH, AX_PROXY_CLASS_HASH, TOKENS, DECIMALS, DMAIL_ROUTER_ADDRESS, STARK_ETH_ADDRESS } from "./Constants";
+import { AX_ACCOUNT_CLASS_HASH, AX_PROXY_CLASS_HASH, TOKENS, DECIMALS, DMAIL_ROUTER_ADDRESS, STARK_ETH_ADDRESS, BraavosInitialClassHash, BraavosProxyClassHash, StarkAccountData } from "./Constants";
 import { STARKNET_RPC_URL } from "../DEPENDENCIES";
 import erc20Abi from './erc20ABI.json'
 import routerAbi from './routerABI.json'
@@ -9,6 +9,31 @@ import zklendAbi from './zklendABI.json'
 
 
 const provider = new RpcProvider({ nodeUrl: STARKNET_RPC_URL });
+
+const calcBraavosInit = (starkKeyPubBraavos: string) =>
+  CallData.compile({ public_key: starkKeyPubBraavos });
+const BraavosProxyConstructor = (BraavosInitializer: Calldata) =>
+  CallData.compile({
+    implementation_address: BraavosInitialClassHash,
+    initializer_selector: hash.getSelectorFromName('initializer'),
+    calldata: [...BraavosInitializer],
+  });
+
+export function calculateBraavosAddress(privateKey: string): string {
+
+  const starkKeyPubBraavos = ec.starkCurve.getStarkKey(num.toHex(privateKey));
+  const BraavosInitializer = calcBraavosInit(starkKeyPubBraavos);
+  const BraavosProxyConstructorCallData = BraavosProxyConstructor(BraavosInitializer);
+
+  const address = hash.calculateContractAddressFromHash(
+    starkKeyPubBraavos,
+    BraavosProxyClassHash,
+    BraavosProxyConstructorCallData,
+    0
+  );
+
+  return address;
+}
 
 export function calculateArgentxAddress(privateKey: string): string {
 
@@ -32,10 +57,41 @@ export function calculateArgentxAddress(privateKey: string): string {
   return AXcontractAddress;
 }
 
+export async function getDeployedStarkentAccount(privateKey: string): Promise<StarkAccountData[]> {
+  const accountOptions = [calculateArgentxAddress(privateKey), calculateBraavosAddress(privateKey)];
+  const accounts: StarkAccountData[] = [];
+
+  let nonce: string | undefined = undefined;
+  for (let i = 0; i < accountOptions.length; i++) {
+    const account = new Account(provider, accountOptions[i], privateKey);
+    let tries = 3;
+    while (tries--) {
+      try {
+        nonce = await account.getNonce();
+        accounts.push({
+          type: i === 0 ? 'Argent' : 'Braavos',
+          address: account.address,
+        });
+      } catch (e: any) {
+        if (e.message === '20: Contract not found') {
+          break;
+        }
+        await sleep({ seconds: 3 });
+        continue;
+      }
+      break;
+    }
+  }
+
+  return accounts;
+}
+
 export async function getStarknetBalances(
   privateKey: string,
+  isArgent: boolean,
 ): Promise<Record<string, number>> {
-  const account = new Account(provider, calculateArgentxAddress(privateKey), privateKey);
+  const address = isArgent ? calculateArgentxAddress(privateKey) : calculateBraavosAddress(privateKey);
+  const account = new Account(provider, address, privateKey);
 
   const balances: Record<string, number> = {};
 
@@ -54,6 +110,7 @@ export async function getStarknetBalances(
 
 export async function sendMessage(
   privateKey: string,
+  isArgent: boolean,
   theme: string,
   email: string,
 ): Promise<{
@@ -61,8 +118,8 @@ export async function sendMessage(
   txHash?: string;
   totalPrice?: number;
 }> {
-
-  const account = new Account(provider, calculateArgentxAddress(privateKey), privateKey);
+  const address = isArgent ? calculateArgentxAddress(privateKey) : calculateBraavosAddress(privateKey);
+  const account = new Account(provider, address, privateKey);
   const etherInstance = new Contract(erc20Abi, TOKENS["ETH"], account);
   const routerInstance = new Contract(routerAbi, DMAIL_ROUTER_ADDRESS, account);
 
@@ -119,26 +176,6 @@ export async function deployStarknetAccount(
 
   let totalPrice = 0;  
 
-  let nonce: string | undefined = undefined;
-  try {
-    nonce = await account.getNonce();
-  } catch (e: any) {
-    if (e.message === '20: Contract not found') {
-    } else {
-      return {
-        result: false,
-        name: 'Already deployed'
-      }
-    }
-  }
-
-  if (nonce) {
-    return {
-      result: false,
-      name: 'Already deployed'
-    }
-  }
-
   const starkBalanceObj = await retry<any>(() => etherInstance.balanceOf(account.address), 10, 90);
   const starkBal = BigNumber.from(uint256.uint256ToBN(starkBalanceObj.balance).toString()); // balance in wei
 
@@ -194,6 +231,7 @@ export async function deployStarknetAccount(
 
 export async function enableCollateral(
   privateKey: string,
+  isArgent: boolean,
   tokenName: string,
   enable: boolean = true,
 ): Promise<{
@@ -203,7 +241,8 @@ export async function enableCollateral(
 }> {
 
   const router = '0x04c0a5193d58f74fbace4b74dcf65481e734ed1714121bdc571da345540efa05';
-  const account = new Account(provider, calculateArgentxAddress(privateKey), privateKey);
+  const address = isArgent ? calculateArgentxAddress(privateKey) : calculateBraavosAddress(privateKey);
+  const account = new Account(provider, address, privateKey);
   const etherInstance = new Contract(erc20Abi, STARK_ETH_ADDRESS, account);
   const routerInstance = new Contract(zklendAbi, router, account);
 
@@ -253,10 +292,12 @@ export async function enableCollateral(
 
 export async function isCollateralEnabled(
   privateKey: string,
+  isArgent: boolean,
   tokenName: string,
 ): Promise<boolean> {
   const router = '0x04c0a5193d58f74fbace4b74dcf65481e734ed1714121bdc571da345540efa05';
-  const signer = new Account(provider, calculateArgentxAddress(privateKey), privateKey);
+  const address = isArgent ? calculateArgentxAddress(privateKey) : calculateBraavosAddress(privateKey);
+  const signer = new Account(provider, address, privateKey);
   const routerInstance = new Contract(zklendAbi, router, signer);
 
   const isCollateralEnabled = await retry<any>(() => routerInstance.is_collateral_enabled(
@@ -281,6 +322,7 @@ const ABI = [{
 
 export async function mintStarkId(
   privateKey: string,
+  isArgent: boolean,
 ): Promise<{
   result: boolean;
   txHash?: string;
@@ -289,7 +331,8 @@ export async function mintStarkId(
   let totalPrice = 0;
 
   const router = '0x05dbdedc203e92749e2e746e2d40a768d966bd243df04a6b712e222bc040a9af';
-  const signer = new Account(provider, calculateArgentxAddress(privateKey), privateKey);
+  const address = isArgent ? calculateArgentxAddress(privateKey) : calculateBraavosAddress(privateKey);
+  const signer = new Account(provider, address, privateKey);
   console.log('signer', signer.address);
   const routerInstance = new Contract(ABI, router, signer);
 
@@ -333,6 +376,7 @@ export async function mintStarkId(
 
 export async function carmineStakeToken(
   privateKey: string,
+  isArgent: boolean,
   tokenName: string,
   amountInToken?: number,
 ): Promise<{
@@ -380,7 +424,8 @@ export async function carmineStakeToken(
   ]
 
   const router = '0x076dbabc4293db346b0a56b29b6ea9fe18e93742c73f12348c8747ecfc1050aa';
-  const signer = new Account(provider, calculateArgentxAddress(privateKey), privateKey);
+  const address = isArgent ? calculateArgentxAddress(privateKey) : calculateBraavosAddress(privateKey);
+  const signer = new Account(provider, address, privateKey);
   console.log('signer', signer.address);
   const tokenInstance = new Contract(erc20Abi, TOKENS[tokenName], signer);
   const routerInstance = new Contract(abi, router, signer);
@@ -464,6 +509,7 @@ export async function carmineStakeToken(
 
 export async function makeEthApprove(
   privateKey: string,
+  isArgent: boolean,
 ): Promise<{
   result: boolean;
   txHash?: string;
@@ -472,7 +518,8 @@ export async function makeEthApprove(
   let totalPrice = 0;
 
   const router = '0x051734077ba7baf5765896c56ce10b389d80cdcee8622e23c0556fb49e82df1b';
-  const signer = new Account(provider, calculateArgentxAddress(privateKey), privateKey);
+  const address = isArgent ? calculateArgentxAddress(privateKey) : calculateBraavosAddress(privateKey);
+  const signer = new Account(provider, address, privateKey);
   console.log('signer', signer.address);
   const etherInstance = new Contract(erc20Abi, TOKENS.ETH, signer);
 

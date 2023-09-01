@@ -1,5 +1,5 @@
 import { shuffleArray, sendTelegramMessage, sleep, randomBetween } from "./Helpers";
-import { calculateArgentxAddress, sendMessage, deployStarknetAccount, isCollateralEnabled, enableCollateral, mintStarkId, carmineStakeToken, getStarknetBalances, makeEthApprove } from "./StarkHelpers";
+import { calculateArgentxAddress, sendMessage, deployStarknetAccount, isCollateralEnabled, enableCollateral, mintStarkId, carmineStakeToken, getStarknetBalances, makeEthApprove, getDeployedStarkentAccount } from "./StarkHelpers";
 import { MAX_TRANSACTIONS_PER_WALLET, MAX_WAIT_TIME, MIN_WAIT_TIME } from "../DEPENDENCIES";
 import { Data, TOKENS } from "./Constants";
 import fs from 'fs';
@@ -32,28 +32,37 @@ async function main() {
     const address = calculateArgentxAddress(keys[0]);
     console.log('Using address: ' + address + '\n');
 
-    const deploy = await deployStarknetAccount(keys[0]);
+    let account = await getDeployedStarkentAccount(keys[0]);
 
-    if (deploy.result) {
-      console.log(`Deployed account: ${deploy.accountAddress}, tx: ${deploy.txHash}, fee: ${(deploy.totalPrice)?.toFixed(6)} ETH`);
+    if (account.length === 0) {
 
-      await sendTelegramMessage(`🔔 Deployed account: ${deploy.accountAddress}, tx: https://starkscan.co/tx/${deploy.txHash}, fee: ${(deploy.totalPrice)?.toFixed(6)} ETH`);
+      const deploy = await deployStarknetAccount(keys[0]);
 
-      await sleep({ minutes: 6 });
-    } else {
-      if (deploy.name === 'Transaction failed' || deploy.name === 'Zero balance') {
-        console.log(`Error deploying account: ${deploy.name} for address: ${address}`);
+      if (deploy.result) {
+        console.log(`Deployed account: ${deploy.accountAddress}, tx: ${deploy.txHash}, fee: ${(deploy.totalPrice)?.toFixed(6)} ETH`);
 
-        await sendTelegramMessage(`❌ Error deploying account: ${deploy.name} for address: ${address}`);
+        await sendTelegramMessage(`🔔 Deployed account: ${deploy.accountAddress}, tx: https://starkscan.co/tx/${deploy.txHash}, fee: ${(deploy.totalPrice)?.toFixed(6)} ETH`);
+        account[0].type = "Argent";
+        account[0].address = deploy.accountAddress!;
 
-        continue;
+        await sleep({ minutes: 6 });
+      } else {
+        if (deploy.name === 'Transaction failed' || deploy.name === 'Zero balance') {
+          console.log(`Error deploying account: ${deploy.name} for address: ${address}`);
+
+          await sendTelegramMessage(`❌ Error deploying account: ${deploy.name} for address: ${address}`);
+
+          continue;
+        }
       }
     }
 
-    if (data[address] && data[address].transactions && data[address].transactions! >= MAX_TRANSACTIONS_PER_WALLET) {
-      console.log('Max transactions reached for address: ' + address);
+    const argent = account[0].type === "Argent" ? true : false;
 
-      await sendTelegramMessage(`🗑 Max transactions reached for address: ${address}, removing from list`);
+    if (data[address] && data[address].transactions && data[address].transactions! >= MAX_TRANSACTIONS_PER_WALLET) {
+      console.log(`Max transactions reached for ${account[0].type} address: ${address}`);
+
+      await sendTelegramMessage(`🗑 Max transactions reached for ${account[0].type} address: ${address}, removing from list`);
 
       pkArr.splice(pkArr.indexOf(keys[0]), 1);
 
@@ -73,52 +82,52 @@ async function main() {
       const rndNum = Math.floor(Math.random() * 3) + 1;
       const theme = shuffleArray(wordList).slice(0, rndNum).join(' ');
 
-      msg = await sendMessage(keys[0], theme, email);
+      msg = await sendMessage(keys[0], argent, theme, email);
 
       if (!msg.result) {
-        console.log('Not enough funds for address: ' + address);
+        console.log(`Not enough funds for ${account[0].type} address: ${address}`);
 
-        await sendTelegramMessage(`🆘 Not enough funds for address: ${address}`);
+        await sendTelegramMessage(`🆘 Not enough funds for ${account[0].type} address: ${address}`);
 
         pkArr.splice(pkArr.indexOf(keys[0]), 1);
 
         continue;
       }
 
-      console.log(`Sent message from ${address} to ${email}, tx: ${msg.txHash}, fee: ${(msg.totalPrice)?.toFixed(6)} ETH`);
+      console.log(`Sent message from ${account[0].type} ${address} to ${email}, tx: ${msg.txHash}, fee: ${(msg.totalPrice)?.toFixed(6)} ETH`);
 
-      await sendTelegramMessage(`✅ Sent message from ${address} to ${email}, tx: https://starkscan.co/tx/${msg.txHash}, fee: ${(msg.totalPrice)?.toFixed(6)} ETH`);
+      await sendTelegramMessage(`✅ Sent message from ${account[0].type} ${address} to ${email}, tx: https://starkscan.co/tx/${msg.txHash}, fee: ${(msg.totalPrice)?.toFixed(6)} ETH`);
 
     } else if (totalisator < 0.4 && totalisator >= 0.2) {
 
       const token = shuffleArray(Object.keys(TOKENS))[0];
-      const enable = await isCollateralEnabled(keys[0], token);
+      const enable = await isCollateralEnabled(keys[0], argent, token);
 
-      msg = await enableCollateral(keys[0], token, !enable);
+      msg = await enableCollateral(keys[0], argent, token, !enable);
 
       if (!msg.result) {
         continue;
       }
 
-      console.log(`${enable ? "Disabled" : "Enabled"} collateral for ${token} for address: ${address}, tx: ${msg.txHash}, fee: ${(msg.totalPrice)?.toFixed(6)} ETH`);
+      console.log(`${enable ? "Disabled" : "Enabled"} collateral for ${token} for ${account[0].type} address: ${address}, tx: ${msg.txHash}, fee: ${(msg.totalPrice)?.toFixed(6)} ETH`);
 
-      await sendTelegramMessage(`✅ ${enable ? "Disabled" : "Enabled"} collateral for ${token} for address: ${address}, tx: https://starkscan.co/tx/${msg.txHash}, fee: ${(msg.totalPrice)?.toFixed(6)} ETH`);
+      await sendTelegramMessage(`✅ ${enable ? "Disabled" : "Enabled"} collateral for ${token} for ${account[0].type} address: ${address}, tx: https://starkscan.co/tx/${msg.txHash}, fee: ${(msg.totalPrice)?.toFixed(6)} ETH`);
 
     } else if (totalisator >= 0.4 && totalisator < 0.6) {
 
-      msg = await mintStarkId(keys[0]);
+      msg = await mintStarkId(keys[0], argent);
 
       if (!msg.result) {
         continue;
       }
 
-      console.log(`Minted stark identity for address: ${address}, tx: ${msg.txHash}, fee: ${(msg.totalPrice)?.toFixed(6)} ETH`);
+      console.log(`Minted stark identity for ${account[0].type} address: ${address}, tx: ${msg.txHash}, fee: ${(msg.totalPrice)?.toFixed(6)} ETH`);
 
-      await sendTelegramMessage(`✅ Minted stark identity for address: ${address}, tx: https://starkscan.co/tx/${msg.txHash}, fee: ${(msg.totalPrice)?.toFixed(6)} ETH`);
+      await sendTelegramMessage(`✅ Minted stark identity for ${account[0].type} address: ${address}, tx: https://starkscan.co/tx/${msg.txHash}, fee: ${(msg.totalPrice)?.toFixed(6)} ETH`);
 
     } else if (totalisator >= 0.6 && totalisator < 0.8) {
 
-      const balances = await getStarknetBalances(keys[0]);
+      const balances = await getStarknetBalances(keys[0], argent);
 
       const notZeroBalances = Object.keys(balances).filter(token => balances[token] !== 0);
 
@@ -131,6 +140,7 @@ async function main() {
 
       msg = await carmineStakeToken(
         keys[0],
+        argent,
         token,
         amount,
       )
@@ -139,24 +149,25 @@ async function main() {
         continue;
       }
 
-      console.log(`Staked ${amount.toFixed(6)} of ${token} for address: ${address}, tx: ${msg.txHash}, fee: ${(msg.totalPrice)?.toFixed(6)} ETH`);
+      console.log(`Staked ${amount.toFixed(6)} of ${token} for ${account[0].type} address: ${address}, tx: ${msg.txHash}, fee: ${(msg.totalPrice)?.toFixed(6)} ETH`);
 
-      await sendTelegramMessage(`✅ Staked ${amount.toFixed(6)} of ${token} for address: ${address}, tx: https://starkscan.co/tx/${msg.txHash}, fee: ${(msg.totalPrice)?.toFixed(6)} ETH`);
+      await sendTelegramMessage(`✅ Staked ${amount.toFixed(6)} of ${token} for ${account[0].type} address: ${address}, tx: https://starkscan.co/tx/${msg.txHash}, fee: ${(msg.totalPrice)?.toFixed(6)} ETH`);
     } else {
       
-      msg = await makeEthApprove(keys[0]);
+      msg = await makeEthApprove(keys[0], argent);
 
       if (!msg.result) {
         continue;
       }
 
-      console.log(`Approved ETH for Unframed: NFT Marketplac on address: ${address}, tx: ${msg.txHash}, fee: ${(msg.totalPrice)?.toFixed(6)} ETH`);
+      console.log(`Approved ETH for Unframed: NFT Marketplac on ${account[0].type} address: ${address}, tx: ${msg.txHash}, fee: ${(msg.totalPrice)?.toFixed(6)} ETH`);
 
-      await sendTelegramMessage(`✅ Approved ETH for Unframed: NFT Marketplac on address: ${address}, tx: https://starkscan.co/tx/${msg.txHash}, fee: ${(msg.totalPrice)?.toFixed(6)} ETH`);
+      await sendTelegramMessage(`✅ Approved ETH for Unframed: NFT Marketplac on ${account[0].type} address: ${address}, tx: https://starkscan.co/tx/${msg.txHash}, fee: ${(msg.totalPrice)?.toFixed(6)} ETH`);
     }
 
     data[address] = {
       address,
+      type: account[0].type,
       transactions: data[address]?.transactions ? data[address].transactions! + 1 : 1,
       fees: data[address]?.fees ? data[address].fees! + msg.totalPrice! : msg.totalPrice,
     };
