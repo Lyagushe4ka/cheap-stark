@@ -1,4 +1,4 @@
-import { Account, ec, hash, Contract, uint256, CallData, RpcProvider, InvokeFunctionResponse, CommonTransactionReceiptResponse, DeployContractResponse, GetTransactionReceiptResponse, cairo, num, Calldata, validateAndParseAddress, validateChecksumAddress } from "starknet";
+import { Account, ec, hash, Contract, uint256, CallData, RpcProvider, InvokeFunctionResponse, CommonTransactionReceiptResponse, DeployContractResponse, GetTransactionReceiptResponse, cairo, num, Calldata, validateAndParseAddress, validateChecksumAddress, getChecksumAddress, addAddressPadding } from "starknet";
 import { getRate, randomBetween, retry, sleep } from "./Helpers";
 import { BigNumber, ethers } from "ethers";
 import { AX_ACCOUNT_CLASS_HASH, AX_PROXY_CLASS_HASH, TOKENS, DECIMALS, DMAIL_ROUTER_ADDRESS, STARK_ETH_ADDRESS, BraavosInitialClassHash, BraavosProxyClassHash, StarkAccountData } from "./Constants";
@@ -580,12 +580,12 @@ export async function transferEth(
   console.log('signer', signer.address);
   const etherInstance = new Contract(erc20Abi, TOKENS.ETH, signer);
 
-  if (!validateChecksumAddress(cexAddress)) {
-    console.log('invalid cex address');
-    return {
-      result: false,
-    }
-  }
+  // if (!validateChecksumAddress(cexAddress)) {
+  //   console.log('invalid cex address');
+  //   return {
+  //     result: false,
+  //   }
+  // }
 
   const rate = await getRate('ETH');
 
@@ -596,7 +596,7 @@ export async function transferEth(
   }
 
   const rndAmount = randomBetween(MAX_AMOUNT_TO_KEEP + 0.1, MIN_AMOUNT_TO_KEEP + 0.1, 2);
-  const amountInWei = ethers.utils.parseEther((rndAmount * rate).toFixed(6));
+  const amountInWei = ethers.utils.parseEther((rndAmount / rate).toFixed(6));
 
   const balance = await retry<any>(() => etherInstance.balanceOf(signer.address));
   const balanceInWei = BigNumber.from(uint256.uint256ToBN(balance.balance).toString()); // balance in wei
@@ -609,12 +609,67 @@ export async function transferEth(
     }
   }
 
+  const tx = await retry<InvokeFunctionResponse>(() => etherInstance.transfer(
+    cexAddress,
+    uint256.bnToUint256(BigInt(amount.toString())),
+  ));
+
+  if (!tx) {
+    return {
+      result: false,
+    }
+  }
+
+  let receipt;
+  try {
+  receipt = await retry<GetTransactionReceiptResponse>(() => provider.waitForTransaction(tx.transaction_hash));
+  } catch (e: any) {
+    return {
+      result: false,
+    }
+  }
+  
+  totalPrice += Number(ethers.utils.formatEther(BigNumber.from(receipt.actual_fee)));
+
+  return {
+    result: true,
+    txHash: receipt.transaction_hash,
+    totalPrice,
+  }
+}
+
+const STARKVERSE_ROUTER = '0x060582df2cd4ad2c988b11fdede5c43f56a432e895df255ccd1af129160044b8';
+const STARKVERSE_ABI = [{
+  "name": "publicMint",
+  "type": "function",
+  "inputs": [
+    {
+      "name": "to",
+      "type": "felt"
+    }
+  ],
+  "outputs": []
+},];
+
+export async function mintStarkverse(
+  privateKey: string,
+  isArgentx: boolean,
+): Promise<{
+  result: boolean;
+  txHash?: string;
+  totalPrice?: number;
+}> {
+  let totalPrice = 0;
+
+  const signer = new Account(provider, isArgentx ? calculateArgentxAddress(privateKey) : calculateBraavosAddress(privateKey), privateKey);
+  console.log('signer', signer.address);
+  const routerInstance = new Contract(STARKVERSE_ABI, STARKVERSE_ROUTER, signer);
+
   const swapCall = {
-    contractAddress: etherInstance.address,
-    entrypoint: "transfer",
+    contractAddress: routerInstance.address,
+    entrypoint: "publicMint",
     calldata: [
-      cexAddress,
-      amount.toString(),
+      signer.address,
     ]
   }
 

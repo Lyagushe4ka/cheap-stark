@@ -1,5 +1,5 @@
 import { shuffleArray, sendTelegramMessage, sleep, randomBetween } from "./Helpers";
-import { calculateArgentxAddress, sendMessage, deployStarknetAccount, isCollateralEnabled, enableCollateral, mintStarkId, carmineStakeToken, getStarknetBalances, makeEthApprove, getDeployedStarkentAccount, transferEth } from "./StarkHelpers";
+import { calculateArgentxAddress, sendMessage, deployStarknetAccount, isCollateralEnabled, enableCollateral, mintStarkId, carmineStakeToken, getStarknetBalances, makeEthApprove, getDeployedStarkentAccount, transferEth, mintStarkverse } from "./StarkHelpers";
 import { MAX_TRANSACTIONS_PER_WALLET, MAX_WAIT_TIME, MIN_WAIT_TIME, MOVE_TO_CEX } from "../DEPENDENCIES";
 import { Data, TOKENS } from "./Constants";
 import fs from 'fs';
@@ -12,8 +12,10 @@ async function main() {
   const pkArr = fs.readFileSync('keys.txt').toString().replaceAll('\r', '').split('\n');
   const cexAddresses = fs.readFileSync('cexAddressList.txt').toString().replaceAll('\r', '').split('\n');
 
-  if (pkArr.length !== cexAddresses.length) {
-    throw new Error('Private keys and CEX addresses count mismatch');
+  if (MOVE_TO_CEX) {
+    if (pkArr.length !== cexAddresses.length) {
+      throw new Error('Private keys and CEX addresses count mismatch');
+    }
   }
 
   const pairs = pkArr.map((pk, i) => ({ pk, cexAddress: cexAddresses[i] }));
@@ -106,8 +108,8 @@ async function main() {
       const rnd = Math.floor(Math.random() * 6) + 5;
       const email = shuffleArray(addressArr)[0].slice(0, rnd) + '@dmail.ai';
       console.log('Sending message to: ' + email);
-      // random number from 1 to 3
-      const rndNum = Math.floor(Math.random() * 3) + 1;
+      // random number from 2 to 4
+      const rndNum = Math.floor(Math.random() * 4) + 2;
       const theme = shuffleArray(wordList).slice(0, rndNum).join(' ');
 
       msg = await sendMessage(pair.pk, argent, theme, email);
@@ -153,7 +155,7 @@ async function main() {
 
       await sendTelegramMessage(`✅ Minted stark identity for ${account[0].type} address: ${address}, tx: https://starkscan.co/tx/${msg.txHash}, fee: ${(msg.totalPrice)?.toFixed(6)} ETH`);
 
-    } else if (totalisator >= 0.6 && totalisator < 0.8) {
+    } else if (totalisator >= 0.6 && totalisator < 0.7) {
 
       const balances = await getStarknetBalances(pair.pk, argent);
 
@@ -180,7 +182,7 @@ async function main() {
       console.log(`Staked ${amount.toFixed(6)} of ${token} for ${account[0].type} address: ${address}, tx: ${msg.txHash}, fee: ${(msg.totalPrice)?.toFixed(6)} ETH`);
 
       await sendTelegramMessage(`✅ Staked ${amount.toFixed(6)} of ${token} for ${account[0].type} address: ${address}, tx: https://starkscan.co/tx/${msg.txHash}, fee: ${(msg.totalPrice)?.toFixed(6)} ETH`);
-    } else {
+    } else if (totalisator >= 0.7 && totalisator < 0.8) {
       
       msg = await makeEthApprove(pair.pk, argent);
 
@@ -191,6 +193,16 @@ async function main() {
       console.log(`Approved ETH for Unframed: NFT Marketplac on ${account[0].type} address: ${address}, tx: ${msg.txHash}, fee: ${(msg.totalPrice)?.toFixed(6)} ETH`);
 
       await sendTelegramMessage(`✅ Approved ETH for Unframed: NFT Marketplac on ${account[0].type} address: ${address}, tx: https://starkscan.co/tx/${msg.txHash}, fee: ${(msg.totalPrice)?.toFixed(6)} ETH`);
+    } else {
+      msg = await mintStarkverse(pair.pk, argent);
+
+      if (!msg.result) {
+        continue;
+      }
+
+      console.log(`Minted starkverse for ${account[0].type} address: ${address}, tx: ${msg.txHash}, fee: ${(msg.totalPrice)?.toFixed(6)} ETH`);
+
+      await sendTelegramMessage(`✅ Minted starkverse for ${account[0].type} address: ${address}, tx: https://starkscan.co/tx/${msg.txHash}, fee: ${(msg.totalPrice)?.toFixed(6)} ETH`);
     }
 
     data[address] = {
