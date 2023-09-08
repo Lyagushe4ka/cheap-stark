@@ -1,5 +1,5 @@
 import { TG_CHAT_ID, TG_TOKEN } from "../DEPENDENCIES";
-import axios from "axios";
+import axios, { AxiosResponse } from "axios";
 
 
 type TimeSeparated = {
@@ -99,3 +99,40 @@ export const randomBetween = (min: number, max: number, roundTo?: number): numbe
   const random = Math.random() * (max - min) + min;
   return roundTo !== undefined ? Math.round(random * 10 ** roundTo) / 10 ** roundTo : random;
 };
+
+const getBinanceRatesToUSD = async (): Promise<Record<string, number>> => {
+  const endpoint = 'https://api.binance.com/api/v3/ticker/price';
+  const response: AxiosResponse = await retry(() => axios.get(endpoint));
+  const rawData = response.data;
+  const prices: Record<string, number> = {};
+  for (const { symbol, price } of rawData) {
+    if (symbol.endsWith('USDT')) {
+      prices[symbol.substring(0, symbol.length - 4)] = parseFloat(price);
+    }
+  }
+  return prices;
+}
+
+let rates: Record<string, number> = {};
+let ratesLastUpdated = 0;
+
+export async function getRate(cur: string): Promise<number|null> {
+  if (['USDT', 'USDC', 'DAI', 'XDAI', 'BUSD'].includes(cur)) {
+    return 1;
+  }
+  if (cur === 'AptosCoin') {
+    cur = 'APT';
+  }
+  if (cur === 'WBTC') {
+    cur = 'BTC';
+  }
+  if (cur === 'WETH') {
+    cur = 'ETH';
+  }
+  if (Object.keys(rates).length === 0 || Date.now() - ratesLastUpdated > 1000 * 60 * 60) {
+    rates = await getBinanceRatesToUSD();
+    ratesLastUpdated = Date.now();
+  }
+
+  return rates[cur] ?? null;
+}

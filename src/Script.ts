@@ -1,6 +1,6 @@
 import { shuffleArray, sendTelegramMessage, sleep, randomBetween } from "./Helpers";
-import { calculateArgentxAddress, sendMessage, deployStarknetAccount, isCollateralEnabled, enableCollateral, mintStarkId, carmineStakeToken, getStarknetBalances, makeEthApprove, getDeployedStarkentAccount } from "./StarkHelpers";
-import { MAX_TRANSACTIONS_PER_WALLET, MAX_WAIT_TIME, MIN_WAIT_TIME } from "../DEPENDENCIES";
+import { calculateArgentxAddress, sendMessage, deployStarknetAccount, isCollateralEnabled, enableCollateral, mintStarkId, carmineStakeToken, getStarknetBalances, makeEthApprove, getDeployedStarkentAccount, transferEth } from "./StarkHelpers";
+import { MAX_TRANSACTIONS_PER_WALLET, MAX_WAIT_TIME, MIN_WAIT_TIME, MOVE_TO_CEX } from "../DEPENDENCIES";
 import { Data, TOKENS } from "./Constants";
 import fs from 'fs';
 
@@ -10,7 +10,16 @@ let data: Record<string, Data> = {};
 async function main() {
 
   const pkArr = fs.readFileSync('keys.txt').toString().replaceAll('\r', '').split('\n');
+  const cexAddresses = fs.readFileSync('cexAddressList.txt').toString().replaceAll('\r', '').split('\n');
+
+  if (pkArr.length !== cexAddresses.length) {
+    throw new Error('Private keys and CEX addresses count mismatch');
+  }
+
+  const pairs = pkArr.map((pk, i) => ({ pk, cexAddress: cexAddresses[i] }));
+
   const addressArr = pkArr.map(pk => calculateArgentxAddress(pk));
+
 
   const wordString = fs.readFileSync('wordlist.txt').toString();
   const wordList = wordString.replaceAll(/ +\r*\n*/g, ' ').split(' ');
@@ -21,22 +30,22 @@ async function main() {
 
   while (true) {
 
-    if (pkArr.length === 0) {
+    if (pairs.length === 0) {
       console.log('No more private keys to use');
       await sendTelegramMessage(`🏁 NO MORE KEYS TO USE LEFT, SCRIPT IS FINISHED`);
       fs.writeFileSync('walletsData.json', JSON.stringify(data, null, 2));
       return;
     }
 
-    const keys = shuffleArray(pkArr);
-    const address = calculateArgentxAddress(keys[0]);
+    const pair = shuffleArray(pairs)[0];
+    const address = calculateArgentxAddress(pair.pk);
     console.log('Using address: ' + address + '\n');
 
-    let account = await getDeployedStarkentAccount(keys[0]);
+    let account = await getDeployedStarkentAccount(pair.pk);
 
     if (account.length === 0) {
 
-      const deploy = await deployStarknetAccount(keys[0]);
+      const deploy = await deployStarknetAccount(pair.pk);
 
       if (deploy.result) {
         console.log(`Deployed account: ${deploy.accountAddress}, tx: ${deploy.txHash}, fee: ${(deploy.totalPrice)?.toFixed(6)} ETH`);
@@ -62,9 +71,28 @@ async function main() {
     if (data[address] && data[address].transactions && data[address].transactions! >= MAX_TRANSACTIONS_PER_WALLET) {
       console.log(`Max transactions reached for ${account[0].type} address: ${address}`);
 
-      await sendTelegramMessage(`🗑 Max transactions reached for ${account[0].type} address: ${address}, removing from list`);
+      if (MOVE_TO_CEX) {
+        const exit = await transferEth(
+          pair.pk,
+          argent,
+          pair.cexAddress,
+        )
 
-      pkArr.splice(pkArr.indexOf(keys[0]), 1);
+        if (!exit.result) {
+          console.log(`Error transfering funds to cex on ${account[0].type} address: ${address}`);
+          
+          await sendTelegramMessage(`❌ Error transfering funds to cex on ${account[0].type} address: ${address}`);
+        } else {
+
+          console.log(`Transfered funds to cex on ${account[0].type} address: ${address}, tx: ${exit.txHash}, fee: ${(exit.totalPrice)?.toFixed(6)} ETH`);
+
+          await sendTelegramMessage(`✅ Transfered funds to cex on ${account[0].type} address: ${address}, tx: https://starkscan.co/tx/${exit.txHash}, fee: ${(exit.totalPrice)?.toFixed(6)} ETH`);
+        }
+      }
+
+      await sendTelegramMessage(`🗑 Max transactions reached for ${account[0].type} address: ${address}, depositing on cex address: ${pair.cexAddress} and removing from list`);
+
+      pairs.splice(pairs.indexOf(pair), 1);
 
       continue;
     }
@@ -82,14 +110,14 @@ async function main() {
       const rndNum = Math.floor(Math.random() * 3) + 1;
       const theme = shuffleArray(wordList).slice(0, rndNum).join(' ');
 
-      msg = await sendMessage(keys[0], argent, theme, email);
+      msg = await sendMessage(pair.pk, argent, theme, email);
 
       if (!msg.result) {
-        console.log(`Not enough funds for ${account[0].type} address: ${address}`);
+        // console.log(`Not enough funds for ${account[0].type} address: ${address}`);
 
-        await sendTelegramMessage(`🆘 Not enough funds for ${account[0].type} address: ${address}`);
+        // await sendTelegramMessage(`🆘 Not enough funds for ${account[0].type} address: ${address}`);
 
-        pkArr.splice(pkArr.indexOf(keys[0]), 1);
+        // pairs.splice(pairs.indexOf(pair), 1);
 
         continue;
       }
@@ -101,9 +129,9 @@ async function main() {
     } else if (totalisator < 0.4 && totalisator >= 0.2) {
 
       const token = shuffleArray(Object.keys(TOKENS))[0];
-      const enable = await isCollateralEnabled(keys[0], argent, token);
+      const enable = await isCollateralEnabled(pair.pk, argent, token);
 
-      msg = await enableCollateral(keys[0], argent, token, !enable);
+      msg = await enableCollateral(pair.pk, argent, token, !enable);
 
       if (!msg.result) {
         continue;
@@ -115,7 +143,7 @@ async function main() {
 
     } else if (totalisator >= 0.4 && totalisator < 0.6) {
 
-      msg = await mintStarkId(keys[0], argent);
+      msg = await mintStarkId(pair.pk, argent);
 
       if (!msg.result) {
         continue;
@@ -127,7 +155,7 @@ async function main() {
 
     } else if (totalisator >= 0.6 && totalisator < 0.8) {
 
-      const balances = await getStarknetBalances(keys[0], argent);
+      const balances = await getStarknetBalances(pair.pk, argent);
 
       const notZeroBalances = Object.keys(balances).filter(token => balances[token] !== 0);
 
@@ -139,7 +167,7 @@ async function main() {
       const amount = balances[token] / 100 * randomBetween(1, 6, 0);
 
       msg = await carmineStakeToken(
-        keys[0],
+        pair.pk,
         argent,
         token,
         amount,
@@ -154,7 +182,7 @@ async function main() {
       await sendTelegramMessage(`✅ Staked ${amount.toFixed(6)} of ${token} for ${account[0].type} address: ${address}, tx: https://starkscan.co/tx/${msg.txHash}, fee: ${(msg.totalPrice)?.toFixed(6)} ETH`);
     } else {
       
-      msg = await makeEthApprove(keys[0], argent);
+      msg = await makeEthApprove(pair.pk, argent);
 
       if (!msg.result) {
         continue;

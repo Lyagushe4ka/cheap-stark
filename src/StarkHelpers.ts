@@ -1,11 +1,11 @@
-import { Account, ec, hash, Contract, uint256, CallData, RpcProvider, InvokeFunctionResponse, CommonTransactionReceiptResponse, DeployContractResponse, GetTransactionReceiptResponse, cairo, num, Calldata } from "starknet";
-import { randomBetween, retry, sleep } from "./Helpers";
+import { Account, ec, hash, Contract, uint256, CallData, RpcProvider, InvokeFunctionResponse, CommonTransactionReceiptResponse, DeployContractResponse, GetTransactionReceiptResponse, cairo, num, Calldata, validateAndParseAddress, validateChecksumAddress } from "starknet";
+import { getRate, randomBetween, retry, sleep } from "./Helpers";
 import { BigNumber, ethers } from "ethers";
 import { AX_ACCOUNT_CLASS_HASH, AX_PROXY_CLASS_HASH, TOKENS, DECIMALS, DMAIL_ROUTER_ADDRESS, STARK_ETH_ADDRESS, BraavosInitialClassHash, BraavosProxyClassHash, StarkAccountData } from "./Constants";
-import { STARKNET_RPC_URL } from "../DEPENDENCIES";
-import erc20Abi from './erc20ABI.json'
-import routerAbi from './routerABI.json'
-import zklendAbi from './zklendABI.json'
+import { MAX_AMOUNT_TO_KEEP, MIN_AMOUNT_TO_KEEP, STARKNET_RPC_URL } from "../DEPENDENCIES";
+import erc20Abi from './ABI/erc20ABI.json'
+import routerAbi from './ABI/routerABI.json'
+import zklendAbi from './ABI/zklendAbi.json'
 
 
 const provider = new RpcProvider({ nodeUrl: STARKNET_RPC_URL });
@@ -534,6 +534,88 @@ export async function makeEthApprove(
       spender: router,
       added_value: amountInWei,
     })
+  }
+
+  const calls = [swapCall];
+
+  const tx = await retry<InvokeFunctionResponse>(() => signer.execute(calls));
+
+  if (!tx) {
+    return {
+      result: false,
+    }
+  }
+
+  let receipt;
+  try {
+  receipt = await retry<GetTransactionReceiptResponse>(() => provider.waitForTransaction(tx.transaction_hash));
+  } catch (e: any) {
+    return {
+      result: false,
+    }
+  }
+  
+  totalPrice += Number(ethers.utils.formatEther(BigNumber.from(receipt.actual_fee)));
+
+  return {
+    result: true,
+    txHash: receipt.transaction_hash,
+    totalPrice,
+  }
+}
+
+export async function transferEth(
+  privateKey: string,
+  isArgent: boolean,
+  cexAddress: string,
+): Promise<{
+  result: boolean;
+  txHash?: string;
+  totalPrice?: number;
+}> {
+  let totalPrice = 0;
+
+  const address = isArgent ? calculateArgentxAddress(privateKey) : calculateBraavosAddress(privateKey);
+  const signer = new Account(provider, address, privateKey);
+  console.log('signer', signer.address);
+  const etherInstance = new Contract(erc20Abi, TOKENS.ETH, signer);
+
+  if (!validateChecksumAddress(cexAddress)) {
+    console.log('invalid cex address');
+    return {
+      result: false,
+    }
+  }
+
+  const rate = await getRate('ETH');
+
+  if (!rate) {
+    return {
+      result: false,
+    }
+  }
+
+  const rndAmount = randomBetween(MAX_AMOUNT_TO_KEEP + 0.1, MIN_AMOUNT_TO_KEEP + 0.1, 2);
+  const amountInWei = ethers.utils.parseEther((rndAmount * rate).toFixed(6));
+
+  const balance = await retry<any>(() => etherInstance.balanceOf(signer.address));
+  const balanceInWei = BigNumber.from(uint256.uint256ToBN(balance.balance).toString()); // balance in wei
+
+  const amount = balanceInWei.sub(amountInWei);
+
+  if (amount.lte(0)) {
+    return {
+      result: false,
+    }
+  }
+
+  const swapCall = {
+    contractAddress: etherInstance.address,
+    entrypoint: "transfer",
+    calldata: [
+      cexAddress,
+      amount.toString(),
+    ]
   }
 
   const calls = [swapCall];

@@ -1,6 +1,12 @@
 
 
-export const STARKNET_RPC_URL = 'https://starknet-mainnet.g.alchemy.com/v2/PboUZKnteNGgSvSkpHmGfKYudpwbRvyd';
+export const STARKNET_RPC_URL = '';
+
+export const MOVE_TO_CEX = true; // Move funds to CEX
+
+export const MAX_AMOUNT_TO_KEEP = 1; // Max amount to keep on wallet in USD
+
+export const MIN_AMOUNT_TO_KEEP = 0.5; // Min amount to keep on wallet in USD
 
 export const MAX_TRANSACTIONS_PER_WALLET = 5; // Max transactions per wallet
 
