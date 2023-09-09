@@ -103,14 +103,16 @@ async function main() {
 
     let msg;
     if (totalisator < 0.2) {
+      console.log('Dmail transaction')
 
       // random number between 5 and 10
       const rnd = Math.floor(Math.random() * 6) + 5;
       const email = shuffleArray(addressArr)[0].slice(0, rnd) + '@dmail.ai';
       console.log('Sending message to: ' + email);
       // random number from 2 to 4
-      const rndNum = Math.floor(Math.random() * 4) + 2;
+      const rndNum = Math.floor(Math.random() * 3) + 1;
       const theme = shuffleArray(wordList).slice(0, rndNum).join(' ');
+      console.log('Theme: ' + theme);
 
       msg = await sendMessage(pair.pk, argent, theme, email);
 
@@ -129,6 +131,7 @@ async function main() {
       await sendTelegramMessage(`✅ Sent message from ${account[0].type} ${address} to ${email}, tx: https://starkscan.co/tx/${msg.txHash}, fee: ${(msg.totalPrice)?.toFixed(6)} ETH`);
 
     } else if (totalisator < 0.4 && totalisator >= 0.2) {
+      console.log('Enabling/Disabling collateral')
 
       const token = shuffleArray(Object.keys(TOKENS))[0];
       const enable = await isCollateralEnabled(pair.pk, argent, token);
@@ -144,6 +147,7 @@ async function main() {
       await sendTelegramMessage(`✅ ${enable ? "Disabled" : "Enabled"} collateral for ${token} for ${account[0].type} address: ${address}, tx: https://starkscan.co/tx/${msg.txHash}, fee: ${(msg.totalPrice)?.toFixed(6)} ETH`);
 
     } else if (totalisator >= 0.4 && totalisator < 0.6) {
+      console.log('Minting stark id')
 
       msg = await mintStarkId(pair.pk, argent);
 
@@ -156,6 +160,7 @@ async function main() {
       await sendTelegramMessage(`✅ Minted stark identity for ${account[0].type} address: ${address}, tx: https://starkscan.co/tx/${msg.txHash}, fee: ${(msg.totalPrice)?.toFixed(6)} ETH`);
 
     } else if (totalisator >= 0.6 && totalisator < 0.7) {
+      console.log('Staking token on carmine')
 
       const balances = await getStarknetBalances(pair.pk, argent);
 
@@ -183,6 +188,7 @@ async function main() {
 
       await sendTelegramMessage(`✅ Staked ${amount.toFixed(6)} of ${token} for ${account[0].type} address: ${address}, tx: https://starkscan.co/tx/${msg.txHash}, fee: ${(msg.totalPrice)?.toFixed(6)} ETH`);
     } else if (totalisator >= 0.7 && totalisator < 0.8) {
+      console.log('Approving ETH for Unframed: NFT Marketplac')
       
       msg = await makeEthApprove(pair.pk, argent);
 
@@ -194,6 +200,7 @@ async function main() {
 
       await sendTelegramMessage(`✅ Approved ETH for Unframed: NFT Marketplac on ${account[0].type} address: ${address}, tx: https://starkscan.co/tx/${msg.txHash}, fee: ${(msg.totalPrice)?.toFixed(6)} ETH`);
     } else {
+      console.log('Minting starkverse')
       msg = await mintStarkverse(pair.pk, argent);
 
       if (!msg.result) {

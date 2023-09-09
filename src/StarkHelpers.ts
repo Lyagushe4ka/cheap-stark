@@ -61,8 +61,9 @@ export async function getDeployedStarkentAccount(privateKey: string): Promise<St
   const accountOptions = [calculateArgentxAddress(privateKey), calculateBraavosAddress(privateKey)];
   const accounts: StarkAccountData[] = [];
 
-  let nonce: string | undefined = undefined;
+  let nonce: string | undefined;
   for (let i = 0; i < accountOptions.length; i++) {
+    nonce = undefined;
     const account = new Account(provider, accountOptions[i], privateKey);
     let tries = 3;
     while (tries--) {
@@ -98,7 +99,7 @@ export async function getStarknetBalances(
   for (const token in TOKENS) {
     const tokenInstance = new Contract(erc20Abi, TOKENS[token], account);
 
-    const balance = await retry<any>(() => tokenInstance.balanceOf(account.address), 10, 90);
+    const balance = await retry<any>(() => tokenInstance.balanceOf(account.address));
     const balanceInWei = BigNumber.from(uint256.uint256ToBN(balance.balance).toString()); // balance in wei
     const formattedBalance = Number(ethers.utils.formatUnits(balanceInWei, DECIMALS[token]));
 
@@ -123,7 +124,7 @@ export async function sendMessage(
   const etherInstance = new Contract(erc20Abi, TOKENS["ETH"], account);
   const routerInstance = new Contract(routerAbi, DMAIL_ROUTER_ADDRESS, account);
 
-  const etherBalance = await retry<any>(() => etherInstance.balanceOf(account.address), 10, 90);
+  const etherBalance = await retry<any>(() => etherInstance.balanceOf(account.address));
 
   const invokeFee = await retry(() => account.estimateInvokeFee(
     {
@@ -131,7 +132,7 @@ export async function sendMessage(
       entrypoint: "transaction",
       calldata: CallData.compile({ to: email, theme: theme }),
     }
-  ), 10, 90);
+  ));
 
   if (invokeFee.suggestedMaxFee > (uint256.uint256ToBN(etherBalance.balance))) {
     return {
@@ -143,10 +144,10 @@ export async function sendMessage(
   const tx = await retry<InvokeFunctionResponse>(() => routerInstance.transaction(
     email,
     theme,
-  ), 10, 90);
+  ));
 
   console.log('waiting for transaction')
-  const receipt = await retry<CommonTransactionReceiptResponse>(() => provider.waitForTransaction(tx.transaction_hash), 10, 90);
+  const receipt = await retry<CommonTransactionReceiptResponse>(() => provider.waitForTransaction(tx.transaction_hash));
 
   if (!receipt.transaction_hash) {
     return {
@@ -176,7 +177,7 @@ export async function deployStarknetAccount(
 
   let totalPrice = 0;  
 
-  const starkBalanceObj = await retry<any>(() => etherInstance.balanceOf(account.address), 10, 90);
+  const starkBalanceObj = await retry<any>(() => etherInstance.balanceOf(account.address));
   const starkBal = BigNumber.from(uint256.uint256ToBN(starkBalanceObj.balance).toString()); // balance in wei
 
   if (starkBal.eq(0)) {
@@ -202,16 +203,16 @@ export async function deployStarknetAccount(
     addressSalt: starkPublicKey,
   };
  
-  const deployFee = await retry(() => account.estimateAccountDeployFee(deployAccountPayload), 10, 90);
+  const deployFee = await retry(() => account.estimateAccountDeployFee(deployAccountPayload));
 
   const deployFeeInWei = BigNumber.from((deployFee.suggestedMaxFee).toString());
   totalPrice += Number(ethers.utils.formatEther(deployFeeInWei));
 
   console.log('starting account deploy')
-  const tx = await retry(() => account.deployAccount(deployAccountPayload), 10, 90);
+  const tx = await retry(() => account.deployAccount(deployAccountPayload), 2, 10);
 
   console.log('waiting for deploy transaction')
-  const receipt = await retry<DeployContractResponse>(() => provider.waitForTransaction(tx.transaction_hash), 10, 90);
+  const receipt = await retry<DeployContractResponse>(() => provider.waitForTransaction(tx.transaction_hash));
 
   if (!receipt.contract_address) {
     return {
@@ -254,11 +255,11 @@ export async function enableCollateral(
     })
   }
 
-  const etherBalance = await retry<any>(() => etherInstance.balanceOf(account.address), 10, 90);
+  const etherBalance = await retry<any>(() => etherInstance.balanceOf(account.address));
 
   const invokeFee = await retry(() => account.estimateInvokeFee(
-    [enableCall]
-  ), 10, 90);
+    [enableCall],
+  ));
 
   if (invokeFee.suggestedMaxFee > (uint256.uint256ToBN(etherBalance.balance))) {
     return {
@@ -267,7 +268,7 @@ export async function enableCollateral(
   }
 
   console.log('sending transaction')
-  const tx = await retry<InvokeFunctionResponse>(() => account.execute([enableCall]), 10, 90);
+  const tx = await retry<InvokeFunctionResponse>(() => account.execute([enableCall]));
 
   if (!tx) {
     return {
@@ -276,7 +277,7 @@ export async function enableCollateral(
   }
 
   console.log('waiting for transaction')
-  const receipt = await retry<GetTransactionReceiptResponse>(() => provider.waitForTransaction(tx.transaction_hash), 10, 90);
+  const receipt = await retry<GetTransactionReceiptResponse>(() => provider.waitForTransaction(tx.transaction_hash));
   if (!receipt.transaction_hash) {
     return {
       result: false,
@@ -303,7 +304,7 @@ export async function isCollateralEnabled(
   const isCollateralEnabled = await retry<any>(() => routerInstance.is_collateral_enabled(
     signer.address,
     TOKENS[tokenName]
-  ), 10, 90);
+  ));
 
   return Number(isCollateralEnabled.enabled) === 1 ? true : false;
 }
@@ -378,7 +379,7 @@ export async function carmineStakeToken(
   privateKey: string,
   isArgent: boolean,
   tokenName: string,
-  amountInToken?: number,
+  amountInToken: number,
 ): Promise<{
   result: boolean;
   txHash?: string;
@@ -433,7 +434,7 @@ export async function carmineStakeToken(
 
 
   
-  const amountInWei = cairo.uint256(ethers.utils.parseUnits(amountInToken!.toString(), DECIMALS[tokenName]).toString());
+  const amountInWei = cairo.uint256(ethers.utils.parseUnits(amountInToken.toFixed(6), DECIMALS[tokenName]).toString());
   
 
   const balance = await retry<any>(() => tokenInstance.balanceOf(signer.address));
@@ -480,7 +481,7 @@ export async function carmineStakeToken(
     calls.unshift(approveCall);
   }
 
-
+  console.log('sending transaction')
   const tx = await retry<InvokeFunctionResponse>(() => signer.execute(calls));
 
   if (!tx) {
@@ -489,6 +490,7 @@ export async function carmineStakeToken(
     }
   }
 
+  console.log('waiting for transaction')
   let receipt;
   try {
   receipt = await retry<GetTransactionReceiptResponse>(() => provider.waitForTransaction(tx.transaction_hash));
