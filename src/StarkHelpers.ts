@@ -126,13 +126,20 @@ export async function sendMessage(
 
   const etherBalance = await retry<any>(() => etherInstance.balanceOf(account.address));
 
-  const invokeFee = await retry(() => account.estimateInvokeFee(
-    {
-      contractAddress: DMAIL_ROUTER_ADDRESS,
-      entrypoint: "transaction",
-      calldata: CallData.compile({ to: email, theme: theme }),
+  let invokeFee;
+  try {
+    invokeFee = await retry(() => account.estimateInvokeFee(
+      {
+        contractAddress: DMAIL_ROUTER_ADDRESS,
+        entrypoint: "transaction",
+        calldata: CallData.compile({ to: email, theme: theme }),
+      }
+    ));
+  } catch (e: any) {
+    return {
+      result: false,
     }
-  ));
+  }
 
   if (invokeFee.suggestedMaxFee > (uint256.uint256ToBN(etherBalance.balance))) {
     return {
@@ -141,13 +148,27 @@ export async function sendMessage(
   }
 
   console.log('sending transaction')
-  const tx = await retry<InvokeFunctionResponse>(() => routerInstance.transaction(
-    email,
-    theme,
-  ));
+  let tx: InvokeFunctionResponse;
+  try {
+    tx = await retry(() => routerInstance.transaction(
+      email,
+      theme,
+    ));
+  } catch (e: any) {
+    return {
+      result: false,
+    }
+  }
 
   console.log('waiting for transaction')
-  const receipt = await retry<CommonTransactionReceiptResponse>(() => provider.waitForTransaction(tx.transaction_hash));
+  let receipt: CommonTransactionReceiptResponse;
+  try {
+    receipt = await retry(() => provider.waitForTransaction(tx.transaction_hash));
+  } catch (e: any) {
+    return {
+      result: false,
+    }
+  }
 
   if (!receipt.transaction_hash) {
     return {
@@ -257,9 +278,16 @@ export async function enableCollateral(
 
   const etherBalance = await retry<any>(() => etherInstance.balanceOf(account.address));
 
-  const invokeFee = await retry(() => account.estimateInvokeFee(
-    [enableCall],
-  ));
+  let invokeFee;
+  try {
+    invokeFee = await retry(() => account.estimateInvokeFee(
+      [enableCall],
+    ));
+  } catch (e: any) {
+    return {
+      result: false,
+    }
+  }
 
   if (invokeFee.suggestedMaxFee > (uint256.uint256ToBN(etherBalance.balance))) {
     return {
@@ -268,7 +296,14 @@ export async function enableCollateral(
   }
 
   console.log('sending transaction')
-  const tx = await retry<InvokeFunctionResponse>(() => account.execute([enableCall]));
+  let tx: InvokeFunctionResponse;
+  try {
+    tx = await retry(() => account.execute([enableCall]));
+  } catch (e: any) {
+    return {
+      result: false,
+    }
+  }
 
   if (!tx) {
     return {
@@ -277,7 +312,15 @@ export async function enableCollateral(
   }
 
   console.log('waiting for transaction')
-  const receipt = await retry<GetTransactionReceiptResponse>(() => provider.waitForTransaction(tx.transaction_hash));
+  let receipt: CommonTransactionReceiptResponse;
+  try {
+    receipt = await retry(() => provider.waitForTransaction(tx.transaction_hash));
+  } catch (e: any) {
+    return {
+      result: false,
+    }
+  }
+
   if (!receipt.transaction_hash) {
     return {
       result: false,
@@ -349,7 +392,15 @@ export async function mintStarkId(
 
   const calls = [swapCall];
 
-  const tx = await retry<InvokeFunctionResponse>(() => signer.execute(calls));
+  console.log('sending transaction')
+  let tx: InvokeFunctionResponse;
+  try {
+    tx = await retry(() => signer.execute(calls));
+  } catch (e: any) {
+    return {
+      result: false,
+    }
+  }
 
   if (!tx) {
     return {
@@ -357,10 +408,16 @@ export async function mintStarkId(
     }
   }
 
-  let receipt;
+  let receipt: CommonTransactionReceiptResponse;
   try {
-  receipt = await retry<GetTransactionReceiptResponse>(() => provider.waitForTransaction(tx.transaction_hash));
+    receipt = await retry(() => provider.waitForTransaction(tx.transaction_hash));
   } catch (e: any) {
+    return {
+      result: false,
+    }
+  }
+
+  if (!receipt.transaction_hash) {
     return {
       result: false,
     }
@@ -482,7 +539,14 @@ export async function carmineStakeToken(
   }
 
   console.log('sending transaction')
-  const tx = await retry<InvokeFunctionResponse>(() => signer.execute(calls));
+  let tx: InvokeFunctionResponse;
+  try {
+    tx = await retry(() => signer.execute(calls));
+  } catch (e: any) {
+    return {
+      result: false,
+    }
+  }
 
   if (!tx) {
     return {
@@ -491,10 +555,16 @@ export async function carmineStakeToken(
   }
 
   console.log('waiting for transaction')
-  let receipt;
+  let receipt: CommonTransactionReceiptResponse;
   try {
-  receipt = await retry<GetTransactionReceiptResponse>(() => provider.waitForTransaction(tx.transaction_hash));
+    receipt = await retry(() => provider.waitForTransaction(tx.transaction_hash));
   } catch (e: any) {
+    return {
+      result: false,
+    }
+  }
+
+  if (!receipt.transaction_hash) {
     return {
       result: false,
     }
@@ -540,7 +610,15 @@ export async function makeEthApprove(
 
   const calls = [swapCall];
 
-  const tx = await retry<InvokeFunctionResponse>(() => signer.execute(calls));
+  console.log('sending transaction')
+  let tx: InvokeFunctionResponse;
+  try {
+    tx = await retry(() => signer.execute(calls));
+  } catch (e: any) {
+    return {
+      result: false,
+    }
+  }
 
   if (!tx) {
     return {
@@ -548,10 +626,16 @@ export async function makeEthApprove(
     }
   }
 
-  let receipt;
+  let receipt: CommonTransactionReceiptResponse;
   try {
-  receipt = await retry<GetTransactionReceiptResponse>(() => provider.waitForTransaction(tx.transaction_hash));
+    receipt = await retry(() => provider.waitForTransaction(tx.transaction_hash));
   } catch (e: any) {
+    return {
+      result: false,
+    }
+  }
+
+  if (!receipt.transaction_hash) {
     return {
       result: false,
     }
@@ -611,10 +695,17 @@ export async function transferEth(
     }
   }
 
-  const tx = await retry<InvokeFunctionResponse>(() => etherInstance.transfer(
-    cexAddress,
-    uint256.bnToUint256(BigInt(amount.toString())),
-  ));
+  let tx: InvokeFunctionResponse;
+  try {
+    tx = await retry(() => etherInstance.transfer(
+      cexAddress,
+      uint256.bnToUint256(BigInt(amount.toString())),
+    ));
+  } catch (e: any) {
+    return {
+      result: false,
+    }
+  }
 
   if (!tx) {
     return {
@@ -622,10 +713,16 @@ export async function transferEth(
     }
   }
 
-  let receipt;
+  let receipt: CommonTransactionReceiptResponse;
   try {
-  receipt = await retry<GetTransactionReceiptResponse>(() => provider.waitForTransaction(tx.transaction_hash));
+    receipt = await retry(() => provider.waitForTransaction(tx.transaction_hash));
   } catch (e: any) {
+    return {
+      result: false,
+    }
+  }
+
+  if (!receipt.transaction_hash) {
     return {
       result: false,
     }
@@ -677,7 +774,15 @@ export async function mintStarkverse(
 
   const calls = [swapCall];
 
-  const tx = await retry<InvokeFunctionResponse>(() => signer.execute(calls));
+  console.log('sending transaction')
+  let tx: InvokeFunctionResponse;
+  try {
+    tx = await retry(() => signer.execute(calls));
+  } catch (e: any) {
+    return {
+      result: false,
+    }
+  }
 
   if (!tx) {
     return {
@@ -685,10 +790,16 @@ export async function mintStarkverse(
     }
   }
 
-  let receipt;
+  let receipt: CommonTransactionReceiptResponse;
   try {
-  receipt = await retry<GetTransactionReceiptResponse>(() => provider.waitForTransaction(tx.transaction_hash));
+    receipt = await retry(() => provider.waitForTransaction(tx.transaction_hash));
   } catch (e: any) {
+    return {
+      result: false,
+    }
+  }
+
+  if (!receipt.transaction_hash) {
     return {
       result: false,
     }
