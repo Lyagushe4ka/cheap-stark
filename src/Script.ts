@@ -53,8 +53,6 @@ async function main() {
         console.log(`Deployed account: ${deploy.accountAddress}, tx: ${deploy.txHash}, fee: ${(deploy.totalPrice)?.toFixed(6)} ETH`);
 
         await sendTelegramMessage(`🔔 Deployed account: ${deploy.accountAddress}, tx: https://starkscan.co/tx/${deploy.txHash}, fee: ${(deploy.totalPrice)?.toFixed(6)} ETH`);
-        account[0].type = "Argent";
-        account[0].address = deploy.accountAddress!;
 
         await sleep({ minutes: 6 });
       } else {
@@ -66,6 +64,12 @@ async function main() {
           continue;
         }
       }
+    }
+
+    account = await getDeployedStarkentAccount(pair.pk);
+
+    if (account.length === 0) {
+      continue;
     }
 
     const argent = account[0].type === "Argent" ? true : false;
