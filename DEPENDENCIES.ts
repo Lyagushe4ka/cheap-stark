@@ -17,3 +17,13 @@ export const MAX_WAIT_TIME = 1.1; // Max wait time between transactions (minutes
 export let TG_CHAT_ID = 0; // Telegram chat id
 
 export let TG_TOKEN = ''; // Telegram bot token
+
+export const ENABLE_MODULES = {
+  CARMINE: false,
+  DMAIL: false,
+  STARK_ID: false,
+  STARKVERSE: false,
+  UNFRAMED_BID: false,
+  ZKLEND_COLLATERAL: false,
+  GOL2_EVOLVE: false,
+}

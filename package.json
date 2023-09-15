@@ -6,7 +6,8 @@
   "scripts": {
     "build": "tsc",
     "start": "ts-node src/Script.ts",
-    "test": "ts-node src/StarkHelpers.ts"
+    "test": "ts-node src/StarkHelpers.ts",
+    "upgrade": "ts-node src/UpgradeScript.ts"
   },
   "author": "",
   "license": "ISC",

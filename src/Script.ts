@@ -1,8 +1,9 @@
 import { shuffleArray, sendTelegramMessage, sleep, randomBetween } from "./Helpers";
-import { calculateArgentxAddress, sendMessage, deployStarknetAccount, isCollateralEnabled, enableCollateral, mintStarkId, carmineStakeToken, getStarknetBalances, makeEthApprove, getDeployedStarkentAccount, transferEth, mintStarkverse } from "./StarkHelpers";
-import { MAX_TRANSACTIONS_PER_WALLET, MAX_WAIT_TIME, MIN_WAIT_TIME, MOVE_TO_CEX } from "../DEPENDENCIES";
+import { calculateArgentxAddress, deployStarknetAccount, getStarknetBalances, getDeployedStarkentAccount, transferEth } from "./StarkHelpers";
+import { ENABLE_MODULES, MAX_TRANSACTIONS_PER_WALLET, MAX_WAIT_TIME, MIN_WAIT_TIME, MOVE_TO_CEX } from "../DEPENDENCIES";
 import { Data, TOKENS } from "./Constants";
 import fs from 'fs';
+import { carmineStakeToken, enableCollateral, evolve, isCollateralEnabled, makeEthApprove, mintStarkId, mintStarkverse, sendMessage } from "./Modules";
 
 
 let data: Record<string, Data> = {};
@@ -41,7 +42,6 @@ async function main() {
 
     const pair = shuffleArray(pairs)[0];
     const address = calculateArgentxAddress(pair.pk);
-    console.log('Using address: ' + address + '\n');
 
     let account = await getDeployedStarkentAccount(pair.pk);
 
@@ -67,6 +67,8 @@ async function main() {
     }
 
     account = await getDeployedStarkentAccount(pair.pk);
+
+    console.log('Using address: ' + account[0].address + '\n');
 
     if (account.length === 0) {
       continue;
@@ -107,6 +109,11 @@ async function main() {
 
     let msg;
     if (totalisator < 0.2) {
+
+      if (!ENABLE_MODULES.DMAIL) {
+        continue;
+      }
+
       console.log('Dmail transaction')
 
       // random number between 5 and 10
@@ -135,6 +142,11 @@ async function main() {
       await sendTelegramMessage(`✅ Sent message from ${account[0].type} ${address} to ${email}, tx: https://starkscan.co/tx/${msg.txHash}, fee: ${(msg.totalPrice)?.toFixed(6)} ETH`);
 
     } else if (totalisator < 0.4 && totalisator >= 0.2) {
+
+      if (!ENABLE_MODULES.ZKLEND_COLLATERAL) {
+        continue;
+      }
+
       console.log('Enabling/Disabling collateral')
 
       const token = shuffleArray(Object.keys(TOKENS))[0];
@@ -151,6 +163,11 @@ async function main() {
       await sendTelegramMessage(`✅ ${enable ? "Disabled" : "Enabled"} collateral for ${token} for ${account[0].type} address: ${address}, tx: https://starkscan.co/tx/${msg.txHash}, fee: ${(msg.totalPrice)?.toFixed(6)} ETH`);
 
     } else if (totalisator >= 0.4 && totalisator < 0.6) {
+
+      if (!ENABLE_MODULES.STARK_ID) {
+        continue;
+      }
+
       console.log('Minting stark id')
 
       msg = await mintStarkId(pair.pk, argent);
@@ -164,6 +181,11 @@ async function main() {
       await sendTelegramMessage(`✅ Minted stark identity for ${account[0].type} address: ${address}, tx: https://starkscan.co/tx/${msg.txHash}, fee: ${(msg.totalPrice)?.toFixed(6)} ETH`);
 
     } else if (totalisator >= 0.6 && totalisator < 0.7) {
+
+      if (!ENABLE_MODULES.CARMINE) {
+        continue;
+      }
+
       console.log('Staking token on carmine')
 
       const balances = await getStarknetBalances(pair.pk, argent);
@@ -192,7 +214,12 @@ async function main() {
 
       await sendTelegramMessage(`✅ Staked ${amount.toFixed(6)} of ${token} for ${account[0].type} address: ${address}, tx: https://starkscan.co/tx/${msg.txHash}, fee: ${(msg.totalPrice)?.toFixed(6)} ETH`);
     } else if (totalisator >= 0.7 && totalisator < 0.8) {
-      console.log('Approving ETH for Unframed: NFT Marketplac')
+
+      if (!ENABLE_MODULES.UNFRAMED_BID) {
+        continue;
+      }
+
+      console.log('Approving ETH for Unframed: NFT Marketplace')
       
       msg = await makeEthApprove(pair.pk, argent);
 
@@ -203,8 +230,13 @@ async function main() {
       console.log(`Approved ETH for Unframed: NFT Marketplac on ${account[0].type} address: ${address}, tx: ${msg.txHash}, fee: ${(msg.totalPrice)?.toFixed(6)} ETH`);
 
       await sendTelegramMessage(`✅ Approved ETH for Unframed: NFT Marketplac on ${account[0].type} address: ${address}, tx: https://starkscan.co/tx/${msg.txHash}, fee: ${(msg.totalPrice)?.toFixed(6)} ETH`);
-    } else {
-      console.log('Minting starkverse')
+    } else if (totalisator >= 0.8 && totalisator < 0.9) {
+
+      if (!ENABLE_MODULES.STARKVERSE) {
+        continue;
+      }
+
+      console.log('Minting starkverse');
       msg = await mintStarkverse(pair.pk, argent);
 
       if (!msg.result) {
@@ -214,6 +246,22 @@ async function main() {
       console.log(`Minted starkverse for ${account[0].type} address: ${address}, tx: ${msg.txHash}, fee: ${(msg.totalPrice)?.toFixed(6)} ETH`);
 
       await sendTelegramMessage(`✅ Minted starkverse for ${account[0].type} address: ${address}, tx: https://starkscan.co/tx/${msg.txHash}, fee: ${(msg.totalPrice)?.toFixed(6)} ETH`);
+    } else {
+
+      if (!ENABLE_MODULES.GOL2_EVOLVE) {
+        continue;
+      }
+
+      console.log('GOL2 evolve');
+      msg = await evolve(pair.pk, argent);
+
+      if (!msg.result) {
+        continue;
+      }
+
+      console.log(`Evolved GOL2 for ${account[0].type} address: ${address}, tx: ${msg.txHash}, fee: ${(msg.totalPrice)?.toFixed(6)} ETH`);
+
+      await sendTelegramMessage(`✅ Evolved GOL2 for ${account[0].type} address: ${address}, tx: https://starkscan.co/tx/${msg.txHash}, fee: ${(msg.totalPrice)?.toFixed(6)} ETH`);
     }
 
     data[address] = {
@@ -224,7 +272,7 @@ async function main() {
     };
 
     await sleep({ minutes: MIN_WAIT_TIME }, { minutes: MAX_WAIT_TIME });
-  }
+  } 
 }
 
 // catching ctrl+c event
