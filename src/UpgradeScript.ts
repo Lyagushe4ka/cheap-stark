@@ -1,6 +1,6 @@
 import fs from 'fs';
 import { sendTelegramMessage, shuffleArray, sleep } from './Helpers';
-import { getDeployedStarkentAccount, upgradeArgentAccount } from './StarkHelpers';
+import { getDeployedStarkentAccount, isArgentProxy, upgradeArgentAccount } from './StarkHelpers';
 import { MAX_WAIT_TIME, MIN_WAIT_TIME } from '../DEPENDENCIES';
 
 
@@ -31,13 +31,31 @@ async function main() {
       continue;
     }
 
+    const check = await isArgentProxy(pk);
+
+    if (check === null) {
+      console.log('Error checking if account is Argent');
+      continue;
+    } else if (check === false) {
+      console.log('Account is already upgraded');
+      data = {
+        ...data,
+        [account[0].address]: true,
+      };
+      pkArr.splice(pkArr.indexOf(pk), 1);
+      continue;
+    }
+
     console.log('Upgrading account: ', account[0].address);
 
     const upgrade = await upgradeArgentAccount(pk);
 
     if (!upgrade.result) {
       console.log('Upgrade failed');
-      data[account[0].address] = false;
+      data = {
+        ...data,
+        [account[0].address]: false,
+      };
       continue;
     }
 
@@ -45,7 +63,10 @@ async function main() {
 
     await sendTelegramMessage(`✅ Succesdully upgraded account: ${account[0].address}, tx: https://starkscan.co/tx/${upgrade.txHash}, fee: ${(upgrade.totalPrice)?.toFixed(6)} ETH`);
 
-    data[account[0].address] = true;
+    data = {
+      ...data,
+      [account[0].address]: true,
+    };
 
     pkArr.splice(pkArr.indexOf(pk), 1);
 

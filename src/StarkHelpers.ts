@@ -1,11 +1,9 @@
-import { Account, ec, hash, Contract, uint256, CallData, RpcProvider, InvokeFunctionResponse, CommonTransactionReceiptResponse, DeployContractResponse, GetTransactionReceiptResponse, cairo, num, Calldata, validateAndParseAddress, validateChecksumAddress, getChecksumAddress, addAddressPadding } from "starknet";
+import { Account, ec, hash, Contract, uint256, CallData, RpcProvider, InvokeFunctionResponse, CommonTransactionReceiptResponse, DeployContractResponse, GetTransactionReceiptResponse, num, Calldata } from "starknet";
 import { getRate, randomBetween, retry, sleep } from "./Helpers";
 import { BigNumber, ethers } from "ethers";
-import { AX_ACCOUNT_CLASS_HASH, AX_PROXY_CLASS_HASH, TOKENS, DECIMALS, DMAIL_ROUTER_ADDRESS, STARK_ETH_ADDRESS, BraavosInitialClassHash, BraavosProxyClassHash, StarkAccountData, AX_ACCOUNT_CLASS_HASH_CAIRO_1 } from "./Constants";
+import { AX_ACCOUNT_CLASS_HASH, AX_PROXY_CLASS_HASH, TOKENS, DECIMALS, STARK_ETH_ADDRESS, BraavosInitialClassHash, BraavosProxyClassHash, StarkAccountData, AX_ACCOUNT_CLASS_HASH_CAIRO_1 } from "./Constants";
 import { MAX_AMOUNT_TO_KEEP, MIN_AMOUNT_TO_KEEP, STARKNET_RPC_URL } from "../DEPENDENCIES";
 import erc20Abi from './ABI/erc20ABI.json'
-import routerAbi from './ABI/routerABI.json'
-import zklendAbi from './ABI/zklendAbi.json'
 
 
 const provider = new RpcProvider({ nodeUrl: STARKNET_RPC_URL });
@@ -61,14 +59,12 @@ export async function getDeployedStarkentAccount(privateKey: string): Promise<St
   const accountOptions = [calculateArgentxAddress(privateKey), calculateBraavosAddress(privateKey)];
   const accounts: StarkAccountData[] = [];
 
-  let nonce: string | undefined;
   for (let i = 0; i < accountOptions.length; i++) {
-    nonce = undefined;
     const account = new Account(provider, accountOptions[i], privateKey);
     let tries = 3;
     while (tries--) {
       try {
-        nonce = await account.getNonce();
+        await account.getNonce();
         accounts.push({
           type: i === 0 ? 'Argent' : 'Braavos',
           address: account.address,
@@ -311,4 +307,40 @@ export async function upgradeArgentAccount(
     totalPrice,
     txHash: receipt.transaction_hash,
   }
+}
+
+export async function isArgentProxy(privateKey: string): Promise<boolean | null> {
+
+  const abi = [
+    {
+      "name": "get_implementation",
+      "type": "function",
+      "inputs": [],
+      "outputs": [
+        {
+          "name": "implementation",
+          "type": "felt"
+        }
+      ],
+      "stateMutability": "view"
+    }
+  ]
+
+  const contract = new Contract(abi, calculateArgentxAddress(privateKey), provider);
+
+  let tries = 3;
+  while (tries--) {
+    try {
+      await contract.get_implementation();
+      return true;
+    } catch (e: any) {
+      if (e.message === '-32603: Internal error: invalid entry point') {
+        return false;
+      }
+      await sleep({ seconds: 3 });
+      continue;
+    }
+  }
+
+  return null;
 }
