@@ -1,6 +1,6 @@
 
 
-export const STARKNET_RPC_URL = 'https://starknet-mainnet.g.alchemy.com/v2/PboUZKnteNGgSvSkpHmGfKYudpwbRvyd';
+export const STARKNET_RPC_URL = '';
 
 export const MOVE_TO_CEX = false; // Move funds to CEX
 
