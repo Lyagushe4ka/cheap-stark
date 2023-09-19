@@ -283,18 +283,17 @@ export async function upgradeArgentAccount(
 
   const calls = [upgradeCall];
 
-  const tx = await retry<InvokeFunctionResponse>(() => account.execute(calls));
+  const tx = await starkExecuteCalls(account, calls);
 
-  if (!tx) {
+  if (tx instanceof Error) {
     return {
       result: false,
     }
   }
 
-  let receipt;
-  try {
-  receipt = await retry<GetTransactionReceiptResponse>(() => provider.waitForTransaction(tx.transaction_hash));
-  } catch (e: any) {
+  const receipt = await starkTxWaitingRoom(tx.transaction_hash);
+
+  if (receipt instanceof Error) {
     return {
       result: false,
     }
