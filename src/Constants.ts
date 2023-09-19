@@ -36,7 +36,9 @@ export type Data = {
   fees?: number;
 }
 
+export type StarknetAccount = 'Argent' | 'Braavos';
+
 export type StarkAccountData = {
-  type: 'Argent' | 'Braavos';
+  type: StarknetAccount;
   address: string;
 }

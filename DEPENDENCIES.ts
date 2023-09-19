@@ -1,6 +1,6 @@
 
 
-export const STARKNET_RPC_URL = '';
+export const STARKNET_RPC_URL = 'https://starknet-mainnet.g.alchemy.com/v2/PboUZKnteNGgSvSkpHmGfKYudpwbRvyd';
 
 export const MOVE_TO_CEX = false; // Move funds to CEX
 
@@ -19,11 +19,11 @@ export let TG_CHAT_ID = 0; // Telegram chat id
 export let TG_TOKEN = ''; // Telegram bot token
 
 export const ENABLE_MODULES = {
-  CARMINE: false,
-  DMAIL: false,
-  STARK_ID: false,
-  STARKVERSE: false,
-  UNFRAMED_BID: false,
-  ZKLEND_COLLATERAL: false,
-  GOL2_EVOLVE: false,
+  CARMINE: true,
+  DMAIL: true,
+  STARK_ID: true,
+  STARKVERSE: true,
+  UNFRAMED_BID: true,
+  ZKLEND_COLLATERAL: true,
+  GOL2_EVOLVE: true,
 }

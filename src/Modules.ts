@@ -1,5 +1,5 @@
 import { Account, CallData, CommonTransactionReceiptResponse, Contract, InvokeFunctionResponse, RpcProvider, cairo, uint256 } from "starknet";
-import { calculateArgentxAddress, calculateBraavosAddress } from "./StarkHelpers";
+import { calculateArgentxAddress, calculateBraavosAddress, starkCreateSigner, starkExecuteCalls, starkTxWaitingRoom } from "./StarkHelpers";
 import { STARKNET_RPC_URL } from "../DEPENDENCIES";
 import erc20Abi from './ABI/erc20ABI.json'
 import routerAbi from './ABI/routerABI.json'
@@ -14,7 +14,6 @@ const provider = new RpcProvider({ nodeUrl: STARKNET_RPC_URL });
 
 export async function sendMessage(
   privateKey: string,
-  isArgent: boolean,
   theme: string,
   email: string,
 ): Promise<{
@@ -22,8 +21,14 @@ export async function sendMessage(
   txHash?: string;
   totalPrice?: number;
 }> {
-  const address = isArgent ? calculateArgentxAddress(privateKey) : calculateBraavosAddress(privateKey);
-  const account = new Account(provider, address, privateKey);
+  const account = await starkCreateSigner(privateKey);
+
+  if (account instanceof Error) {
+    return {
+      result: false
+    }
+  }
+
   const etherInstance = new Contract(erc20Abi, TOKENS["ETH"], account);
   const routerInstance = new Contract(routerAbi, DMAIL_ROUTER_ADDRESS, account);
 
@@ -50,30 +55,28 @@ export async function sendMessage(
     }
   }
 
-  console.log('sending transaction')
-  let tx: InvokeFunctionResponse;
-  try {
-    tx = await retry(() => routerInstance.transaction(
+  const call = {
+    contractAddress: DMAIL_ROUTER_ADDRESS,
+    entrypoint: "transaction",
+    calldata: CallData.compile({
       email,
       theme,
-    ));
-  } catch (e: any) {
+    })
+  }
+
+  const calls = [call];
+
+  const tx = await starkExecuteCalls(account, calls);
+
+  if (tx instanceof Error) {
     return {
-      result: false,
+      result: false
     }
   }
 
-  console.log('waiting for transaction')
-  let receipt: CommonTransactionReceiptResponse;
-  try {
-    receipt = await retry(() => provider.waitForTransaction(tx.transaction_hash));
-  } catch (e: any) {
-    return {
-      result: false,
-    }
-  }
+  const receipt = await starkTxWaitingRoom(tx.transaction_hash);
 
-  if (!receipt.transaction_hash) {
+  if (receipt instanceof Error) {
     return {
       result: false,
     }
@@ -88,7 +91,6 @@ export async function sendMessage(
 
 export async function enableCollateral(
   privateKey: string,
-  isArgent: boolean,
   tokenName: string,
   enable: boolean = true,
 ): Promise<{
@@ -96,10 +98,16 @@ export async function enableCollateral(
   txHash?: string;
   totalPrice?: number;
 }> {
-
   const router = '0x04c0a5193d58f74fbace4b74dcf65481e734ed1714121bdc571da345540efa05';
-  const address = isArgent ? calculateArgentxAddress(privateKey) : calculateBraavosAddress(privateKey);
-  const account = new Account(provider, address, privateKey);
+
+  const account = await starkCreateSigner(privateKey);
+
+  if (account instanceof Error) {
+    return {
+      result: false
+    }
+  }
+
   const etherInstance = new Contract(erc20Abi, STARK_ETH_ADDRESS, account);
   const routerInstance = new Contract(zklendAbi, router, account);
 
@@ -131,32 +139,19 @@ export async function enableCollateral(
   }
 
   console.log('sending transaction')
-  let tx: InvokeFunctionResponse;
-  try {
-    tx = await retry(() => account.execute([enableCall]));
-  } catch (e: any) {
+  const calls = [enableCall];
+ 
+  const tx = await starkExecuteCalls(account, calls)
+
+  if (tx instanceof Error) {
     return {
-      result: false,
+      result: false
     }
   }
 
-  if (!tx) {
-    return {
-      result: false,
-    }
-  }
+  const receipt = await starkTxWaitingRoom(tx.transaction_hash);
 
-  console.log('waiting for transaction')
-  let receipt: CommonTransactionReceiptResponse;
-  try {
-    receipt = await retry(() => provider.waitForTransaction(tx.transaction_hash));
-  } catch (e: any) {
-    return {
-      result: false,
-    }
-  }
-
-  if (!receipt.transaction_hash) {
+  if (receipt instanceof Error) {
     return {
       result: false,
     }
@@ -171,12 +166,16 @@ export async function enableCollateral(
 
 export async function isCollateralEnabled(
   privateKey: string,
-  isArgent: boolean,
   tokenName: string,
 ): Promise<boolean> {
   const router = '0x04c0a5193d58f74fbace4b74dcf65481e734ed1714121bdc571da345540efa05';
-  const address = isArgent ? calculateArgentxAddress(privateKey) : calculateBraavosAddress(privateKey);
-  const signer = new Account(provider, address, privateKey);
+
+  const signer = await starkCreateSigner(privateKey);
+
+  if (signer instanceof Error) {
+    return false;
+  }
+
   const routerInstance = new Contract(zklendAbi, router, signer);
 
   const isCollateralEnabled = await retry<any>(() => routerInstance.is_collateral_enabled(
@@ -201,7 +200,6 @@ const ABI = [{
 
 export async function mintStarkId(
   privateKey: string,
-  isArgent: boolean,
 ): Promise<{
   result: boolean;
   txHash?: string;
@@ -210,8 +208,15 @@ export async function mintStarkId(
   let totalPrice = 0;
 
   const router = '0x05dbdedc203e92749e2e746e2d40a768d966bd243df04a6b712e222bc040a9af';
-  const address = isArgent ? calculateArgentxAddress(privateKey) : calculateBraavosAddress(privateKey);
-  const signer = new Account(provider, address, privateKey);
+
+  const signer = await starkCreateSigner(privateKey);
+
+  if (signer instanceof Error) {
+    return {
+      result: false
+    }
+  }
+
   console.log('signer', signer.address);
   const routerInstance = new Contract(ABI, router, signer);
 
@@ -228,31 +233,18 @@ export async function mintStarkId(
   const calls = [swapCall];
 
   console.log('sending transaction')
-  let tx: InvokeFunctionResponse;
-  try {
-    tx = await retry(() => signer.execute(calls));
-  } catch (e: any) {
+  
+  const tx = await starkExecuteCalls(signer, calls);
+
+  if (tx instanceof Error) {
     return {
-      result: false,
+      result: false
     }
   }
 
-  if (!tx) {
-    return {
-      result: false,
-    }
-  }
+  const receipt = await starkTxWaitingRoom(tx.transaction_hash);
 
-  let receipt: CommonTransactionReceiptResponse;
-  try {
-    receipt = await retry(() => provider.waitForTransaction(tx.transaction_hash));
-  } catch (e: any) {
-    return {
-      result: false,
-    }
-  }
-
-  if (!receipt.transaction_hash) {
+  if (receipt instanceof Error) {
     return {
       result: false,
     }
@@ -269,7 +261,6 @@ export async function mintStarkId(
 
 export async function carmineStakeToken(
   privateKey: string,
-  isArgent: boolean,
   tokenName: string,
   amountInToken: number,
 ): Promise<{
@@ -317,18 +308,21 @@ export async function carmineStakeToken(
   ]
 
   const router = '0x076dbabc4293db346b0a56b29b6ea9fe18e93742c73f12348c8747ecfc1050aa';
-  const address = isArgent ? calculateArgentxAddress(privateKey) : calculateBraavosAddress(privateKey);
-  const signer = new Account(provider, address, privateKey);
+  
+  const signer = await starkCreateSigner(privateKey);
+
+  if (signer instanceof Error) {
+    return {
+      result: false
+    }
+  }
+
   console.log('signer', signer.address);
   const tokenInstance = new Contract(erc20Abi, TOKENS[tokenName], signer);
   const routerInstance = new Contract(abi, router, signer);
-
-
-
   
   const amountInWei = cairo.uint256(ethers.utils.parseUnits(amountInToken.toFixed(6), DECIMALS[tokenName]).toString());
   
-
   const balance = await retry<any>(() => tokenInstance.balanceOf(signer.address));
 
   if (uint256.uint256ToBN(balance.balance) < uint256.uint256ToBN(amountInWei)) {
@@ -374,32 +368,18 @@ export async function carmineStakeToken(
   }
 
   console.log('sending transaction')
-  let tx: InvokeFunctionResponse;
-  try {
-    tx = await retry(() => signer.execute(calls));
-  } catch (e: any) {
+ 
+  const tx = await starkExecuteCalls(signer, calls);
+
+  if (tx instanceof Error) {
     return {
-      result: false,
+      result: false
     }
   }
 
-  if (!tx) {
-    return {
-      result: false,
-    }
-  }
+  const receipt = await starkTxWaitingRoom(tx.transaction_hash);
 
-  console.log('waiting for transaction')
-  let receipt: CommonTransactionReceiptResponse;
-  try {
-    receipt = await retry(() => provider.waitForTransaction(tx.transaction_hash));
-  } catch (e: any) {
-    return {
-      result: false,
-    }
-  }
-
-  if (!receipt.transaction_hash) {
+  if (receipt instanceof Error) {
     return {
       result: false,
     }
@@ -416,7 +396,6 @@ export async function carmineStakeToken(
 
 export async function makeEthApprove(
   privateKey: string,
-  isArgent: boolean,
 ): Promise<{
   result: boolean;
   txHash?: string;
@@ -425,8 +404,15 @@ export async function makeEthApprove(
   let totalPrice = 0;
 
   const router = '0x051734077ba7baf5765896c56ce10b389d80cdcee8622e23c0556fb49e82df1b';
-  const address = isArgent ? calculateArgentxAddress(privateKey) : calculateBraavosAddress(privateKey);
-  const signer = new Account(provider, address, privateKey);
+  
+  const signer = await starkCreateSigner(privateKey);
+
+  if (signer instanceof Error) {
+    return {
+      result: false
+    }
+  }
+
   console.log('signer', signer.address);
   const etherInstance = new Contract(erc20Abi, TOKENS.ETH, signer);
 
@@ -446,31 +432,18 @@ export async function makeEthApprove(
   const calls = [swapCall];
 
   console.log('sending transaction')
-  let tx: InvokeFunctionResponse;
-  try {
-    tx = await retry(() => signer.execute(calls));
-  } catch (e: any) {
+ 
+  const tx = await starkExecuteCalls(signer, calls);
+
+  if (tx instanceof Error) {
     return {
-      result: false,
+      result: false
     }
   }
 
-  if (!tx) {
-    return {
-      result: false,
-    }
-  }
+  const receipt = await starkTxWaitingRoom(tx.transaction_hash);
 
-  let receipt: CommonTransactionReceiptResponse;
-  try {
-    receipt = await retry(() => provider.waitForTransaction(tx.transaction_hash));
-  } catch (e: any) {
-    return {
-      result: false,
-    }
-  }
-
-  if (!receipt.transaction_hash) {
+  if (receipt instanceof Error) {
     return {
       result: false,
     }
@@ -487,7 +460,6 @@ export async function makeEthApprove(
 
 export async function mintStarkverse(
   privateKey: string,
-  isArgentx: boolean,
 ): Promise<{
   result: boolean;
   txHash?: string;
@@ -508,7 +480,14 @@ export async function mintStarkverse(
     "outputs": []
   },];
 
-  const signer = new Account(provider, isArgentx ? calculateArgentxAddress(privateKey) : calculateBraavosAddress(privateKey), privateKey);
+  const signer = await starkCreateSigner(privateKey);
+
+  if (signer instanceof Error) {
+    return {
+      result: false
+    }
+  }
+
   console.log('signer', signer.address);
   const routerInstance = new Contract(STARKVERSE_ABI, STARKVERSE_ROUTER, signer);
 
@@ -523,31 +502,18 @@ export async function mintStarkverse(
   const calls = [swapCall];
 
   console.log('sending transaction')
-  let tx: InvokeFunctionResponse;
-  try {
-    tx = await retry(() => signer.execute(calls));
-  } catch (e: any) {
+  
+  const tx = await starkExecuteCalls(signer, calls);
+
+  if (tx instanceof Error) {
     return {
-      result: false,
+      result: false
     }
   }
 
-  if (!tx) {
-    return {
-      result: false,
-    }
-  }
+  const receipt = await starkTxWaitingRoom(tx.transaction_hash);
 
-  let receipt: CommonTransactionReceiptResponse;
-  try {
-    receipt = await retry(() => provider.waitForTransaction(tx.transaction_hash));
-  } catch (e: any) {
-    return {
-      result: false,
-    }
-  }
-
-  if (!receipt.transaction_hash) {
+  if (receipt instanceof Error) {
     return {
       result: false,
     }
@@ -564,7 +530,6 @@ export async function mintStarkverse(
 
 export async function evolve(
   privateKey: string,
-  isArgentx: boolean,
 ): Promise<{
   result: boolean;
   txHash?: string;
@@ -587,7 +552,14 @@ export async function evolve(
     },
   ]
 
-  const signer = new Account(provider, isArgentx ? calculateArgentxAddress(privateKey) : calculateBraavosAddress(privateKey), privateKey);
+  const signer = await starkCreateSigner(privateKey);
+
+  if (signer instanceof Error) {
+    return {
+      result: false
+    }
+  }
+
   console.log('signer', signer.address);
   const routerInstance = new Contract(ABI, ROUTER, signer);
 
@@ -602,31 +574,18 @@ export async function evolve(
   const calls = [swapCall];
 
   console.log('sending transaction')
-  let tx: InvokeFunctionResponse;
-  try {
-    tx = await retry(() => signer.execute(calls));
-  } catch (e: any) {
+  
+  const tx = await starkExecuteCalls(signer, calls);
+
+  if (tx instanceof Error) {
     return {
-      result: false,
+      result: false
     }
   }
 
-  if (!tx) {
-    return {
-      result: false,
-    }
-  }
+  const receipt = await starkTxWaitingRoom(tx.transaction_hash);
 
-  let receipt: CommonTransactionReceiptResponse;
-  try {
-    receipt = await retry(() => provider.waitForTransaction(tx.transaction_hash));
-  } catch (e: any) {
-    return {
-      result: false,
-    }
-  }
-
-  if (!receipt.transaction_hash) {
+  if (receipt instanceof Error) {
     return {
       result: false,
     }

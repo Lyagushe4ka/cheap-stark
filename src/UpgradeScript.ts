@@ -1,6 +1,6 @@
 import fs from 'fs';
 import { sendTelegramMessage, shuffleArray, sleep } from './Helpers';
-import { getDeployedStarkentAccount, isArgentProxy, upgradeArgentAccount } from './StarkHelpers';
+import { getArgentCairoVersion, getDeployedStarkentAccount, upgradeArgentAccount } from './StarkHelpers';
 import { MAX_WAIT_TIME, MIN_WAIT_TIME } from '../DEPENDENCIES';
 
 
@@ -31,12 +31,12 @@ async function main() {
       continue;
     }
 
-    const check = await isArgentProxy(pk);
+    const check = await getArgentCairoVersion(pk);
 
-    if (check === null) {
+    if (!check) {
       console.log('Error checking if account is Argent');
       continue;
-    } else if (check === false) {
+    } else if (check === '1') {
       console.log('Account is already upgraded');
       data = {
         ...data,

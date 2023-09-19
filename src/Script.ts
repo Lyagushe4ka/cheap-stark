@@ -125,15 +125,9 @@ async function main() {
       const theme = shuffleArray(wordList).slice(0, rndNum).join(' ');
       console.log('Theme: ' + theme);
 
-      msg = await sendMessage(pair.pk, argent, theme, email);
+      msg = await sendMessage(pair.pk, theme, email);
 
       if (!msg.result) {
-        // console.log(`Not enough funds for ${account[0].type} address: ${address}`);
-
-        // await sendTelegramMessage(`🆘 Not enough funds for ${account[0].type} address: ${address}`);
-
-        // pairs.splice(pairs.indexOf(pair), 1);
-
         continue;
       }
 
@@ -150,9 +144,9 @@ async function main() {
       console.log('Enabling/Disabling collateral')
 
       const token = shuffleArray(Object.keys(TOKENS))[0];
-      const enable = await isCollateralEnabled(pair.pk, argent, token);
+      const enable = await isCollateralEnabled(pair.pk, token);
 
-      msg = await enableCollateral(pair.pk, argent, token, !enable);
+      msg = await enableCollateral(pair.pk, token, !enable);
 
       if (!msg.result) {
         continue;
@@ -170,7 +164,7 @@ async function main() {
 
       console.log('Minting stark id')
 
-      msg = await mintStarkId(pair.pk, argent);
+      msg = await mintStarkId(pair.pk);
 
       if (!msg.result) {
         continue;
@@ -201,7 +195,6 @@ async function main() {
 
       msg = await carmineStakeToken(
         pair.pk,
-        argent,
         token,
         amount,
       )
@@ -221,7 +214,7 @@ async function main() {
 
       console.log('Approving ETH for Unframed: NFT Marketplace')
       
-      msg = await makeEthApprove(pair.pk, argent);
+      msg = await makeEthApprove(pair.pk);
 
       if (!msg.result) {
         continue;
@@ -237,7 +230,7 @@ async function main() {
       }
 
       console.log('Minting starkverse');
-      msg = await mintStarkverse(pair.pk, argent);
+      msg = await mintStarkverse(pair.pk);
 
       if (!msg.result) {
         continue;
@@ -253,7 +246,7 @@ async function main() {
       }
 
       console.log('GOL2 evolve');
-      msg = await evolve(pair.pk, argent);
+      msg = await evolve(pair.pk);
 
       if (!msg.result) {
         continue;

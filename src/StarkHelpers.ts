@@ -1,7 +1,7 @@
-import { Account, ec, hash, Contract, uint256, CallData, RpcProvider, InvokeFunctionResponse, CommonTransactionReceiptResponse, DeployContractResponse, GetTransactionReceiptResponse, num, Calldata } from "starknet";
+import { Account, ec, hash, Contract, uint256, CallData, RpcProvider, InvokeFunctionResponse, CommonTransactionReceiptResponse, DeployContractResponse, GetTransactionReceiptResponse, num, Calldata, CairoVersion, AllowArray, Call } from "starknet";
 import { getRate, randomBetween, retry, sleep } from "./Helpers";
 import { BigNumber, ethers } from "ethers";
-import { AX_ACCOUNT_CLASS_HASH, AX_PROXY_CLASS_HASH, TOKENS, DECIMALS, STARK_ETH_ADDRESS, BraavosInitialClassHash, BraavosProxyClassHash, StarkAccountData, AX_ACCOUNT_CLASS_HASH_CAIRO_1 } from "./Constants";
+import { AX_ACCOUNT_CLASS_HASH, AX_PROXY_CLASS_HASH, TOKENS, DECIMALS, STARK_ETH_ADDRESS, BraavosInitialClassHash, BraavosProxyClassHash, StarkAccountData, AX_ACCOUNT_CLASS_HASH_CAIRO_1, StarknetAccount } from "./Constants";
 import { MAX_AMOUNT_TO_KEEP, MIN_AMOUNT_TO_KEEP, STARKNET_RPC_URL } from "../DEPENDENCIES";
 import erc20Abi from './ABI/erc20ABI.json'
 
@@ -309,21 +309,21 @@ export async function upgradeArgentAccount(
   }
 }
 
-export async function isArgentProxy(privateKey: string): Promise<boolean | null> {
+export async function getArgentCairoVersion(privateKey: string): Promise<CairoVersion | undefined> {
 
   const abi = [
     {
-      "name": "get_implementation",
+      "name": "getVersion",
       "type": "function",
       "inputs": [],
       "outputs": [
         {
-          "name": "implementation",
+          "name": "version",
           "type": "felt"
         }
       ],
       "stateMutability": "view"
-    }
+    },
   ]
 
   const contract = new Contract(abi, calculateArgentxAddress(privateKey), provider);
@@ -331,16 +331,95 @@ export async function isArgentProxy(privateKey: string): Promise<boolean | null>
   let tries = 3;
   while (tries--) {
     try {
-      await contract.get_implementation();
-      return true;
-    } catch (e: any) {
-      if (e.message === '-32603: Internal error: invalid entry point') {
-        return false;
+      const version = await contract.getVersion();
+      if (version.version === 206933536304n) { // > 3.0.0
+        return '1';
+      } else {
+        return '0';
       }
+    } catch (e: any) {
       await sleep({ seconds: 3 });
       continue;
     }
   }
 
-  return null;
+  return undefined;
+}
+
+export async function starkCreateSigner(privateKey: string, specificAccountType?: StarknetAccount): Promise<Account | Error> {
+
+  const starkWallets = await getDeployedStarkentAccount(privateKey);
+
+  if (starkWallets.length === 0) {
+    return new Error('No starknet accounts found');
+  }
+
+  let starkWallet: StarkAccountData | undefined = starkWallets[0];
+  if (specificAccountType) {
+    starkWallet = starkWallets.find(w => w.type === specificAccountType);
+
+    if (!starkWallet) {
+      return new Error(`No ${specificAccountType} starknet accounts found`);
+    }
+  }
+
+  let version: CairoVersion | undefined;
+  if (starkWallet.type === 'Argent') {
+    version = await getArgentCairoVersion(privateKey);
+    if (!version) {
+      return new Error('Could not get Argent Cairo version');
+    }
+  }
+
+  const signer = new Account(provider, starkWallet.address, privateKey, version);
+
+  return signer;
+}
+
+export async function starkTxWaitingRoom(txHash: string, tries = 6, interval = 3): Promise<GetTransactionReceiptResponse | Error> {
+
+  let receipt: GetTransactionReceiptResponse | undefined;
+  while (!receipt && --tries) {
+    receipt = await Promise.race([
+      provider.waitForTransaction(txHash),
+      sleep({ minutes: interval }),
+    ])
+  }
+
+  if (!receipt || !receipt.transaction_hash) {
+    return new Error('Could not get transaction receipt');
+  }
+
+  return receipt;
+}
+
+export async function starkExecuteCalls(
+  signer: Account,
+  callsArray: AllowArray<Call>,
+  errorsArray?: Array<string>
+): Promise<InvokeFunctionResponse | Error> {
+
+  const nonce = await signer.getNonce();
+
+  let tx: InvokeFunctionResponse | undefined;
+  let tries = 3;
+  while (!tx && --tries) {
+    try {
+      tx = await signer.execute(callsArray, undefined, { nonce });
+    } catch (e: any) {
+      if (e.message.includes('nonce')) {
+        return new Error('Could not parse nonce');
+      }
+      if (errorsArray && errorsArray.some(err => e.message.includes(err))) {
+        return new Error(e.message);
+      }
+      continue;
+    }
+  }
+
+  if (!tx) {
+    return new Error('Tx execution failed');
+  }
+
+  return tx;
 }
